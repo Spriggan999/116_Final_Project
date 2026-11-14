@@ -1,0 +1,18 @@
+{
+  "old": {
+    "cpu_threads": 20,
+    "batch": 8,
+    "samples": 117,
+    "seconds": 0.9786166770009004,
+    "samples_per_second": 119.55651558949711
+  },
+  "new": {
+    "cpu_threads": 2,
+    "batch": 32,
+    "samples": 117,
+    "seconds": 0.04504274500141037,
+    "samples_per_second": 2597.5326325324204
+  },
+  "scope": "CPU input-only comparison; excludes GPU augmentation, model, rendering and I/O.",
+  "input_only_speedup": 21.72639960042973
+}

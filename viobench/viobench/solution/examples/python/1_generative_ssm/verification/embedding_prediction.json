@@ -1,0 +1,355 @@
+{
+  "date": "2026-11-12",
+  "scope": "Direct IMU-conditioned embedding prediction, with RGB retained as an option. No accuracy result.",
+  "visual_inference": {
+    "gpu": "NVIDIA GeForce RTX 5080",
+    "torch": "2.15.0+cu132",
+    "batch": 4,
+    "window": 101,
+    "hidden": 1792,
+    "steps": 8,
+    "warmup": 2,
+    "repeats": 3,
+    "scope": "Synthetic frozen full-size GRU teacher inference, online visual prediction and host transfers. Excludes simulator, loading, backward, optimizer, export and accuracy evaluation.",
+    "rgb": {
+      "seconds": [
+        1.5886145109543577,
+        1.584941486013122,
+        1.5865319140721112
+      ],
+      "windows_per_second": 20.167694755669725,
+      "peak_allocated_mib": 2533.58935546875,
+      "visual_sequence_shape": [
+        4,
+        101,
+        3,
+        480,
+        640
+      ],
+      "visual_sequence_mib": 1420.3125,
+      "real_or_generated_images_encoded_per_step": 404
+    },
+    "embedding": {
+      "seconds": [
+        0.3525472580222413,
+        0.3510853589978069,
+        0.34908543108031154
+      ],
+      "windows_per_second": 91.19250892794416,
+      "peak_allocated_mib": 445.521484375,
+      "visual_sequence_shape": [
+        4,
+        101,
+        48
+      ],
+      "visual_sequence_mib": 0.073974609375,
+      "real_or_generated_images_encoded_per_step": 44
+    },
+    "throughput_ratio": 4.521712076304968
+  },
+  "distillation": {
+    "embedding": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "torch": "2.15.0+cu132",
+      "batch": 4,
+      "window": 101,
+      "amp": true,
+      "fused_adamw": true,
+      "visual_prediction": "embedding",
+      "steps": 8,
+      "warmup": 2,
+      "repeats": 3,
+      "scope": "Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.",
+      "serial": {
+        "seconds": [
+          1.488717102096416,
+          1.4944373039761558,
+          1.4940276709385216
+        ],
+        "windows_per_second": 21.44205849767189,
+        "peak_allocated_mib": 825.0576171875
+      },
+      "parallel": {
+        "seconds": [
+          1.2290242209564894,
+          1.2340497630648315,
+          1.2260535090463236
+        ],
+        "windows_per_second": 26.022413207566455,
+        "peak_allocated_mib": 877.76611328125
+      },
+      "speedup": 1.213615437640555
+    },
+    "rgb": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "torch": "2.15.0+cu132",
+      "batch": 4,
+      "window": 101,
+      "amp": true,
+      "fused_adamw": true,
+      "visual_prediction": "rgb",
+      "steps": 8,
+      "warmup": 2,
+      "repeats": 3,
+      "scope": "Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.",
+      "serial": {
+        "seconds": [
+          2.699374432093464,
+          2.7128146690083668,
+          2.695995190064423
+        ],
+        "windows_per_second": 11.839888753464887,
+        "peak_allocated_mib": 2703.28857421875
+      },
+      "parallel": {
+        "seconds": [
+          1.877243319991976,
+          1.8340340569848195,
+          1.8107109940610826
+        ],
+        "windows_per_second": 17.385042044548246,
+        "peak_allocated_mib": 2761.576171875
+      },
+      "speedup": 1.4683450500715725
+    },
+    "embedding_vs_rgb_parallel_ratio": 1.496827740817963
+  },
+  "cuda_integration": {
+    "settings": {
+      "backbone": "gru",
+      "frame_mode": "embedding",
+      "visual_prediction": "embedding",
+      "embedding_hidden": 256,
+      "embedding_ema": 0.99,
+      "use_generated_frames": true,
+      "frame_student": "embedding_predictor",
+      "frame_generator_base": 33,
+      "learned_visual": true,
+      "hidden": 1792,
+      "width": 640,
+      "height": 480,
+      "frame_width": 640,
+      "max_flow_pixels": 160.0,
+      "frame_input_stride": 8,
+      "visual_input_stride": 8,
+      "mamba_layers": 0,
+      "attention_window": 16,
+      "hybrid_d_state": 16,
+      "hybrid_head_dim": 32,
+      "hybrid_attention_heads": 4,
+      "state_visual_feature_dropout_training_only": 0.05
+    },
+    "embedding_epochs": [
+      {
+        "epoch": 1,
+        "train_loss": 0.09003099054098129,
+        "validation_loss": 0.0902070626616478,
+        "best_validation_loss": 0.0902070626616478,
+        "non_improving_data_cycles": 0,
+        "validation_prediction": 8.866536518326029e-05,
+        "validation_content": 0.00012077570136170834,
+        "validation_variance": 0.08999761939048767,
+        "validation_covariance": 2.7470525311955318e-14
+      },
+      {
+        "epoch": 2,
+        "train_loss": 0.09036776423454285,
+        "validation_loss": 0.09003676474094391,
+        "best_validation_loss": 0.09003676474094391,
+        "non_improving_data_cycles": 0,
+        "validation_prediction": 1.16670889838133e-05,
+        "validation_content": 2.7366786525817588e-05,
+        "validation_variance": 0.08999773114919662,
+        "validation_covariance": 2.5160473341280867e-14
+      }
+    ],
+    "stage_performance": [
+      {
+        "stage": "embedding",
+        "epoch": 1,
+        "seconds": 0.5708527270471677,
+        "samples": 8,
+        "samples_per_second": 14.014122418896644,
+        "peak_allocated_mib": 230.55810546875,
+        "recording_batch": "/tmp/hyperdrone-embedding-integration/recordings/run-974ad0a7c3744c1cb5c5d08f49ba8903/batch-000000",
+        "fresh_data_wait_seconds": 0.0,
+        "recording_pass": 1
+      },
+      {
+        "stage": "embedding",
+        "epoch": 2,
+        "seconds": 0.03980286803562194,
+        "samples": 8,
+        "samples_per_second": 200.99054150671572,
+        "peak_allocated_mib": 232.15283203125,
+        "recording_batch": "/tmp/hyperdrone-embedding-integration/recordings/run-974ad0a7c3744c1cb5c5d08f49ba8903/batch-000001",
+        "fresh_data_wait_seconds": 0.08377574908081442,
+        "recording_pass": 1
+      },
+      {
+        "stage": "state",
+        "epoch": 1,
+        "seconds": 3.0531345850322396,
+        "samples": 2,
+        "samples_per_second": 0.65506447367399,
+        "peak_allocated_mib": 471.94482421875,
+        "recording_batch": "/tmp/hyperdrone-embedding-integration/recordings/run-974ad0a7c3744c1cb5c5d08f49ba8903/batch-000002",
+        "fresh_data_wait_seconds": 2.0098470059456304,
+        "recording_pass": 1
+      },
+      {
+        "stage": "state",
+        "epoch": 2,
+        "seconds": 2.1185714279999956,
+        "samples": 2,
+        "samples_per_second": 0.944032367078635,
+        "peak_allocated_mib": 471.95361328125,
+        "recording_batch": "/tmp/hyperdrone-embedding-integration/recordings/run-974ad0a7c3744c1cb5c5d08f49ba8903/batch-000003",
+        "fresh_data_wait_seconds": 2.079061232507229e-06,
+        "recording_pass": 1
+      }
+    ],
+    "ppo": [
+      {
+        "iteration": 1,
+        "mean_reward": -0.0017258601728826761,
+        "validation_loss": 0.006554496008902788,
+        "best_validation_loss": 0.006554496008902788,
+        "sl_validation_loss": 0.0065786149352788925,
+        "selected": true,
+        "recording_batch": "/tmp/hyperdrone-embedding-integration/recordings/run-974ad0a7c3744c1cb5c5d08f49ba8903/batch-000004",
+        "recording_pass": 1,
+        "approx_kl": 0.0,
+        "updates": 1
+      }
+    ],
+    "student_metrics": {
+      "100": [
+        {
+          "epoch": 1,
+          "train_loss": 0.29708895832300186,
+          "validation_state_loss": 0.012692363001406193,
+          "best_validation_state_loss": 0.012692363001406193,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-embedding-integration/students/stream-data/run-ac92c098fae24c7691034214cd6ca46f/batch-000000",
+          "active": true
+        }
+      ],
+      "10k": [
+        {
+          "epoch": 1,
+          "train_loss": 0.004247535951435566,
+          "validation_state_loss": 0.006401844788342714,
+          "best_validation_state_loss": 0.006401844788342714,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-embedding-integration/students/stream-data/run-ac92c098fae24c7691034214cd6ca46f/batch-000000",
+          "active": true
+        }
+      ],
+      "1m": [
+        {
+          "epoch": 1,
+          "train_loss": 0.005211389623582363,
+          "validation_state_loss": 0.006241557188332081,
+          "best_validation_state_loss": 0.006241557188332081,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-embedding-integration/students/stream-data/run-ac92c098fae24c7691034214cd6ca46f/batch-000000",
+          "active": true
+        }
+      ],
+      "100m": [
+        {
+          "epoch": 1,
+          "train_loss": 0.13845545053482056,
+          "validation_state_loss": 0.03730276599526405,
+          "best_validation_state_loss": 0.03730276599526405,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-embedding-integration/students/stream-data/run-ac92c098fae24c7691034214cd6ca46f/batch-000000",
+          "active": true
+        }
+      ]
+    },
+    "student_performance": [
+      {
+        "stage": "distillation",
+        "epoch": 1,
+        "seconds": 4.790330347022973,
+        "samples": 2,
+        "samples_per_second": 0.41750774061812496,
+        "peak_allocated_mib": 385.25439453125,
+        "active_profiles": [
+          "100",
+          "10k",
+          "1m",
+          "100m"
+        ],
+        "parallel": true,
+        "student_updates": 8,
+        "recording_batch": "/tmp/hyperdrone-embedding-integration/students/stream-data/run-ac92c098fae24c7691034214cd6ca46f/batch-000000",
+        "fresh_data_wait_seconds": 0.0,
+        "recording_pass": 1
+      }
+    ],
+    "checkpoints_finite_fp32": true,
+    "teacher_unchanged_by_distillation": true,
+    "owned_recordings_cleaned": true,
+    "sl_export_guest_passed": true,
+    "ppo_selected_export_guest_passed": true,
+    "hold_embedding_export_guest_passed": true,
+    "description": "Real 640x480 Hyperdrone collection; two embedding-pretraining epochs, two state SL epochs, one PPO iteration; all four tiers distilled on CUDA. Tiny data/epoch smoke checks only."
+  },
+  "wasm_smoke": {
+    "module": "/tmp/hyperdrone-embedding-integration/teacher.wasm",
+    "module_sha256": "c5fdb8df8b4ccd7de43559c7cdd34ba584c56b6f591f1ed05b449732b02d0d18",
+    "bytes": 129491121,
+    "frames_requested": 3,
+    "frames_completed": 3,
+    "simulated_duration_seconds": 0.15,
+    "limits": {
+      "init_fuel": 200000000000,
+      "step_fuel": 20000000000,
+      "memory_bytes": 2147483648,
+      "table_elements": 1048576,
+      "init_wall_seconds": 300.0,
+      "step_wall_seconds": 60.0
+    },
+    "max_upload_bytes": 134217728,
+    "episode_timeout_seconds": 1440,
+    "passed": true,
+    "fuel_step_max": 3970111611,
+    "wall_step_seconds_max": 0.2620320679852739,
+    "memory_bytes_observed_max": 364511232,
+    "width": 640,
+    "height": 480,
+    "fuel_init": 4625616894,
+    "wall_init_seconds_reported": 0.34221558598801494,
+    "elapsed_seconds": 4.1923243800411
+  },
+  "tests": {
+    "cpu_suite": {
+      "passed": 107,
+      "skipped": 5,
+      "existing_export_tracing_warnings": 2
+    },
+    "host_cuda_embedding_and_parallel_tests": {
+      "passed": 18
+    },
+    "auxiliary_embedding_teacher_forward_backward": [
+      "gru",
+      "mamba_hybrid"
+    ],
+    "static_checks": "pyflakes and py_compile passed",
+    "embedding_module_after_patch_warm_start_coverage": {
+      "passed": 11,
+      "skipped_cuda": 1
+    }
+  },
+  "limitations": [
+    "JEPA-inspired global feature prediction with an EMA target and variance/covariance penalties; not the complete MC-JEPA optical-flow/content training method.",
+    "Random starting weights and tiny training runs do not establish convergence or VIO accuracy.",
+    "GPU inference probe excludes data loading, simulator concurrency, backward, optimizer and export; the distillation probe includes students but excludes simulator/loaders/validation/export.",
+    "GPU allocated memory excludes driver/context, renderer and allocator reservations.",
+    "The WASM check covers three frames only, not the default 1200-frame verification or actual benchmark trajectories.",
+    "Changing embedding/RGB representation requires a new training run; old checkpoints retain RGB."
+  ]
+}

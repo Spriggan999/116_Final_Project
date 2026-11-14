@@ -1,0 +1,141 @@
+{
+  "scope": "Bounded CUDA probes of embedding batches and hybrid AMP/local attention.\n\nSynthetic compute/transfer measurements, excluding simulator/data loading and\naccuracy evaluation. No running training checkpoints or datasets are modified.\n",
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "torch": "2.15.0+cu132",
+  "settings": {
+    "output": "1_generative_ssm/verification/parallel_physics_cuda.json",
+    "stage": "hybrid",
+    "dimensions": [
+      48
+    ],
+    "batches": [
+      64,
+      128
+    ],
+    "windows": [
+      401,
+      1601,
+      4001
+    ],
+    "state_batch": 2,
+    "hidden": 896,
+    "warmup": 1,
+    "steps": 3,
+    "memory_fraction": 0.6,
+    "reserve_gib": 2.0,
+    "variants": [
+      "legacy",
+      "parallel"
+    ]
+  },
+  "cases": [
+    {
+      "stage": "hybrid",
+      "dimension": 48,
+      "batch": 2,
+      "window": 401,
+      "amp": false,
+      "attention_chunk": 0,
+      "parallel_physics": false,
+      "free_mib_before": 15100.3125,
+      "seconds_per_step": 0.41200051533329923,
+      "samples_per_second": 4.854362860158184,
+      "peak_allocated_mib": 409.21435546875,
+      "training_feature_dtype": "torch.float32",
+      "validation_feature_dtype": "torch.float32",
+      "physics_fp32": true,
+      "validation_finite": true,
+      "passed": true
+    },
+    {
+      "stage": "hybrid",
+      "dimension": 48,
+      "batch": 2,
+      "window": 401,
+      "amp": true,
+      "attention_chunk": 512,
+      "parallel_physics": true,
+      "free_mib_before": 14308.875,
+      "seconds_per_step": 0.011245640666553905,
+      "samples_per_second": 177.8466927142957,
+      "peak_allocated_mib": 408.3583984375,
+      "training_feature_dtype": "torch.bfloat16",
+      "validation_feature_dtype": "torch.float32",
+      "physics_fp32": true,
+      "validation_finite": true,
+      "passed": true
+    },
+    {
+      "stage": "hybrid",
+      "dimension": 48,
+      "batch": 2,
+      "window": 1601,
+      "amp": false,
+      "attention_chunk": 0,
+      "parallel_physics": false,
+      "free_mib_before": 13590.5,
+      "seconds_per_step": 1.5805081073328135,
+      "samples_per_second": 1.2654158436270853,
+      "peak_allocated_mib": 683.1494140625,
+      "training_feature_dtype": "torch.float32",
+      "validation_feature_dtype": "torch.float32",
+      "physics_fp32": true,
+      "validation_finite": true,
+      "passed": true
+    },
+    {
+      "stage": "hybrid",
+      "dimension": 48,
+      "batch": 2,
+      "window": 1601,
+      "amp": true,
+      "attention_chunk": 512,
+      "parallel_physics": true,
+      "free_mib_before": 13500.5625,
+      "seconds_per_step": 0.014803632000014963,
+      "samples_per_second": 135.10198037873263,
+      "peak_allocated_mib": 519.390625,
+      "training_feature_dtype": "torch.bfloat16",
+      "validation_feature_dtype": "torch.float32",
+      "physics_fp32": true,
+      "validation_finite": true,
+      "passed": true
+    },
+    {
+      "stage": "hybrid",
+      "dimension": 48,
+      "batch": 1,
+      "window": 4001,
+      "amp": false,
+      "attention_chunk": 0,
+      "parallel_physics": false,
+      "free_mib_before": 13500.5625,
+      "seconds_per_step": 4.121141620333219,
+      "samples_per_second": 0.24265120981674587,
+      "peak_allocated_mib": 890.37158203125,
+      "training_feature_dtype": "torch.float32",
+      "validation_feature_dtype": "torch.float32",
+      "physics_fp32": true,
+      "validation_finite": true,
+      "passed": true
+    },
+    {
+      "stage": "hybrid",
+      "dimension": 48,
+      "batch": 1,
+      "window": 4001,
+      "amp": true,
+      "attention_chunk": 512,
+      "parallel_physics": true,
+      "free_mib_before": 13648.5625,
+      "seconds_per_step": 0.015787574666319415,
+      "samples_per_second": 63.34095142133265,
+      "peak_allocated_mib": 583.68505859375,
+      "training_feature_dtype": "torch.bfloat16",
+      "validation_feature_dtype": "torch.float32",
+      "physics_fp32": true,
+      "validation_finite": true,
+      "passed": true
+    }
+  ]
+}

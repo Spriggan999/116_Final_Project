@@ -1,0 +1,176 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "torch": "2.15.0+cu132",
+  "batch": 4,
+  "window": 101,
+  "amp": true,
+  "steps": 8,
+  "warmup": 2,
+  "repeats": 3,
+  "scope": "Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.",
+  "serial": {
+    "seconds": [
+      2.7780366470105946,
+      2.818196713924408,
+      2.7954645520076156
+    ],
+    "windows_per_second": 11.439877959851012,
+    "peak_allocated_mib": 2704.2158203125
+  },
+  "parallel": {
+    "seconds": [
+      1.8924804260022938,
+      1.8663283450296149,
+      1.8828640739666298
+    ],
+    "windows_per_second": 17.016229518715537,
+    "peak_allocated_mib": 2801.7509765625
+  },
+  "speedup": 1.4874485181078934,
+  "date": "2026-11-12",
+  "tests": {
+    "cpu_suite": {
+      "passed": 90,
+      "skipped_cuda": 2,
+      "existing_export_tracing_warnings": 2
+    },
+    "host_cuda_pipeline_suite": {
+      "passed": 6
+    },
+    "static_checks": "pyflakes passed"
+  },
+  "limitations": [
+    "Synthetic stationary inputs and random initial weights; not an accuracy measurement.",
+    "Simulator overlap, loader startup, validation and export are excluded from this compute comparison.",
+    "Allocated GPU memory excludes renderer/context and allocator reservations."
+  ],
+  "integration": {
+    "description": "Two actual CUDA epochs with full-size random frozen teacher, all four students, real 640x480 Hyperdrone recording generation, two simultaneous collector flights, two spawn loader workers, batch one and a 512 MiB disk budget; checkpoint-only check.",
+    "teacher_unchanged": true,
+    "checkpoints_finite_fp32": true,
+    "owned_recordings_cleaned": true,
+    "epochs": [
+      {
+        "stage": "distillation",
+        "epoch": 1,
+        "seconds": 5.576667666085996,
+        "samples": 2,
+        "samples_per_second": 0.3586371144479024,
+        "peak_allocated_mib": 1518.7724609375,
+        "active_profiles": [
+          "100",
+          "10k",
+          "1m",
+          "100m"
+        ],
+        "parallel": true,
+        "student_updates": 8,
+        "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000000",
+        "fresh_data_wait_seconds": 0.0,
+        "recording_pass": 1
+      },
+      {
+        "stage": "distillation",
+        "epoch": 2,
+        "seconds": 5.096431112033315,
+        "samples": 2,
+        "samples_per_second": 0.39243147921253135,
+        "peak_allocated_mib": 1537.79541015625,
+        "active_profiles": [
+          "100",
+          "10k",
+          "1m",
+          "100m"
+        ],
+        "parallel": true,
+        "student_updates": 8,
+        "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000001",
+        "fresh_data_wait_seconds": 1.501990482211113e-06,
+        "recording_pass": 1
+      }
+    ],
+    "profiles": {
+      "100": [
+        {
+          "epoch": 1,
+          "train_loss": 0.2973645552992821,
+          "validation_state_loss": 0.012770865112543106,
+          "best_validation_state_loss": 0.012770865112543106,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000000",
+          "active": true
+        },
+        {
+          "epoch": 2,
+          "train_loss": 0.29652877151966095,
+          "validation_state_loss": 0.012661973014473915,
+          "best_validation_state_loss": 0.012661973014473915,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000001",
+          "active": true
+        }
+      ],
+      "10k": [
+        {
+          "epoch": 1,
+          "train_loss": 0.004626173060387373,
+          "validation_state_loss": 0.00645726453512907,
+          "best_validation_state_loss": 0.00645726453512907,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000000",
+          "active": true
+        },
+        {
+          "epoch": 2,
+          "train_loss": 0.004123275983147323,
+          "validation_state_loss": 0.006456555798649788,
+          "best_validation_state_loss": 0.00645726453512907,
+          "non_improving_data_cycles": 1,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000001",
+          "active": true
+        }
+      ],
+      "1m": [
+        {
+          "epoch": 1,
+          "train_loss": 0.005729432916268706,
+          "validation_state_loss": 0.005940140224993229,
+          "best_validation_state_loss": 0.005940140224993229,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000000",
+          "active": true
+        },
+        {
+          "epoch": 2,
+          "train_loss": 0.004347124602645636,
+          "validation_state_loss": 0.006129919551312923,
+          "best_validation_state_loss": 0.005940140224993229,
+          "non_improving_data_cycles": 1,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000001",
+          "active": true
+        }
+      ],
+      "100m": [
+        {
+          "epoch": 1,
+          "train_loss": 0.10916148545220494,
+          "validation_state_loss": 0.03529375046491623,
+          "best_validation_state_loss": 0.03529375046491623,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000000",
+          "active": true
+        },
+        {
+          "epoch": 2,
+          "train_loss": 0.17502360045909882,
+          "validation_state_loss": 0.013985787518322468,
+          "best_validation_state_loss": 0.013985787518322468,
+          "non_improving_data_cycles": 0,
+          "recording_batch": "/tmp/hyperdrone-parallel-distillation-e2e/students-512mib/stream-data/run-fca145654a4e47979f42b9c95a271a10/batch-000001",
+          "active": true
+        }
+      ]
+    },
+    "note": "Only two training windows per epoch; inclusive throughput is dominated by loader startup and validation. Not an accuracy or end-to-end speedup measurement."
+  }
+}

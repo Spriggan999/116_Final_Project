@@ -1,0 +1,68 @@
+{
+  "scope": "Compare FP32 parallel training physics and gradients with sequential physics.",
+  "device": "cuda",
+  "passed": true,
+  "errors": [
+    {
+      "length": 1,
+      "max_absolute_error": {
+        "pos": 0.0,
+        "vel": 0.0,
+        "rot": 0.0,
+        "omega": 0.0,
+        "corrections": 0.0
+      }
+    },
+    {
+      "length": 2,
+      "max_absolute_error": {
+        "pos": 0.0,
+        "vel": 0.0,
+        "rot": 0.0,
+        "omega": 0.0,
+        "corrections": 0.0
+      }
+    },
+    {
+      "length": 17,
+      "max_absolute_error": {
+        "pos": 5.238689482212067e-10,
+        "vel": 1.9208528101444244e-08,
+        "rot": 2.384185791015625e-07,
+        "omega": 0.0,
+        "corrections": 0.0
+      }
+    },
+    {
+      "length": 401,
+      "max_absolute_error": {
+        "pos": 2.7082860469818115e-06,
+        "vel": 5.710870027542114e-06,
+        "rot": 1.3113021850585938e-06,
+        "omega": 0.0,
+        "corrections": 0.0
+      }
+    },
+    {
+      "length": 1601,
+      "max_absolute_error": {
+        "pos": 5.9917569160461426e-05,
+        "vel": 4.6096742153167725e-05,
+        "rot": 3.7550926208496094e-06,
+        "omega": 0.0,
+        "corrections": 0.0
+      }
+    },
+    {
+      "length": 4001,
+      "max_absolute_error": {
+        "pos": 0.009134292602539062,
+        "vel": 0.0017017126083374023,
+        "rot": 2.47955322265625e-05,
+        "omega": 0.0,
+        "corrections": 0.0
+      }
+    }
+  ],
+  "gradient_max_absolute_error": 9.305267667514272e-11
+}

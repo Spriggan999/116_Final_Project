@@ -1,0 +1,160 @@
+{
+  "embedding": {
+    "name": "helpful-paper-17",
+    "url": "https://forge.coreweave.com/wandb/ysaxena_personal/hyperdrone-vio-fuel-aware/runs/c3ikypyw",
+    "epochs": 20,
+    "system": {
+      "gpu.0.gpu": {
+        "samples": 446,
+        "mean": 5.993273542600897,
+        "median": 6.0,
+        "p95": 16,
+        "maximum": 40
+      },
+      "gpu.0.smActive": {
+        "samples": 445,
+        "mean": 2.4714794123927804,
+        "median": 2.554038927505545,
+        "p95": 4.483251632133006,
+        "maximum": 6.268830596530721
+      },
+      "gpu.0.pipeTensorActive": {
+        "samples": 445,
+        "mean": 0.06191163119437136,
+        "median": 0.0800412782034141,
+        "p95": 0.11969625159504209,
+        "maximum": 0.1484599786458184
+      },
+      "gpu.0.memoryAllocated": {
+        "samples": 446,
+        "mean": 9.980814729413746,
+        "median": 8.451281972643072,
+        "p95": 13.456495736980923,
+        "maximum": 14.091348218119364
+      },
+      "gpu.0.powerWatts": {
+        "samples": 446,
+        "mean": 54.9675,
+        "median": 54.501999999999995,
+        "p95": 63.304,
+        "maximum": 81.446
+      },
+      "cpu": {
+        "samples": 445,
+        "mean": 88.43319270959061,
+        "median": 90.5564697265625,
+        "p95": 94.0656494140625,
+        "maximum": 94.31135864257813
+      }
+    },
+    "training_seconds": {
+      "samples": 20,
+      "mean": 317.93966459751243,
+      "median": 313.86370903399074,
+      "p95": 372.46959549793974,
+      "maximum": 410.07665416493546
+    },
+    "epoch_wall_seconds": {
+      "samples": 19,
+      "mean": 336.13318897548476,
+      "median": 339.3997890949249,
+      "p95": 389.96988463401794,
+      "maximum": 425.41635179519653
+    },
+    "fresh_data_wait_seconds": 1.5834812074899673e-05,
+    "pytorch_peak_allocated_mib": 233.56103515625
+  },
+  "state": {
+    "name": "comic-river-18",
+    "url": "https://forge.coreweave.com/wandb/ysaxena_personal/hyperdrone-vio-fuel-aware/runs/yxkxjez9",
+    "epochs": 7,
+    "system": {
+      "gpu.0.gpu": {
+        "samples": 157,
+        "mean": 22.305732484076433,
+        "median": 24,
+        "p95": 38,
+        "maximum": 68
+      },
+      "gpu.0.smActive": {
+        "samples": 156,
+        "mean": 2.7062990703606213,
+        "median": 1.9928021951779686,
+        "p95": 5.76079298094317,
+        "maximum": 19.130181215974076
+      },
+      "gpu.0.pipeTensorActive": {
+        "samples": 156,
+        "mean": 0.0073619954542004755,
+        "median": 0.006659927716565164,
+        "p95": 0.018367627935299707,
+        "maximum": 0.02987324880396231
+      },
+      "gpu.0.memoryAllocated": {
+        "samples": 157,
+        "mean": 56.31407567908841,
+        "median": 63.61942587253879,
+        "p95": 68.75230019014906,
+        "maximum": 69.07432681101638
+      },
+      "gpu.0.powerWatts": {
+        "samples": 157,
+        "mean": 60.90159872611465,
+        "median": 60.741,
+        "p95": 70.474,
+        "maximum": 97.698
+      },
+      "cpu": {
+        "samples": 156,
+        "mean": 6.031734213462243,
+        "median": 4.728783035278321,
+        "p95": 10.29284210205078,
+        "maximum": 37.6576171875
+      }
+    },
+    "training_seconds": {
+      "samples": 7,
+      "mean": 293.8629634731416,
+      "median": 282.6884951440152,
+      "p95": 300.0095896270359,
+      "maximum": 410.5014554329682
+    },
+    "epoch_wall_seconds": {
+      "samples": 6,
+      "mean": 315.5461058616638,
+      "median": 311.7723271846771,
+      "p95": 336.2211368083954,
+      "maximum": 342.5684401988983
+    },
+    "fresh_data_wait_seconds": 7.285270839929581e-06,
+    "pytorch_peak_allocated_mib": 464.6220703125
+  },
+  "collection_seconds": {
+    "samples": 28,
+    "mean": 124.37357142857142,
+    "median": 120.235,
+    "p95": 172.8,
+    "maximum": 206.94
+  },
+  "state_windows": [
+    101
+  ],
+  "state_promotions": 0,
+  "launcher_status": {
+    "child_returncode": -15,
+    "stop_reason": "SIGHUP",
+    "forced_stop": false,
+    "error": null,
+    "checkpoint_files": [
+      "frame_student.pt",
+      "post_sl/frame_student.pt",
+      "post_sl/state_student.pt",
+      "ppo_training.pt",
+      "state_student.pt",
+      "state_student_ppo.pt",
+      "state_student_sl.pt"
+    ],
+    "primary": "/home/cc/eecs116/fa26/class/eecs116-aaq/Documents/project_3/viobench/viobench/solution/examples/python/1_generative_ssm/checkpoints/20261113-011547-curriculum-23bnej8g",
+    "local_mirror": "/var/tmp/hyperdrone-eecs116-aaq/checkpoint-backups/20261113-011547-curriculum-23bnej8g"
+  }
+}

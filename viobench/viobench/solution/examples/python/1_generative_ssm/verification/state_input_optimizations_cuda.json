@@ -1,0 +1,21 @@
+{
+  "scope": "CUDA state-input transfer/encoding probe; excludes loaders, simulator and state model.",
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "window": 4001,
+  "batch": 1,
+  "native_cameras": 1001,
+  "selected_cameras": 401,
+  "source": "Synthetic expanded uint8 frames; no filesystem/IPC measurement.",
+  "cases": {
+    "previous": {
+      "seconds_per_window": 0.2657328559992796,
+      "peak_allocated_mib": 7041.62841796875
+    },
+    "selected_and_chunked": {
+      "seconds_per_window": 0.11013667900018238,
+      "peak_allocated_mib": 118.86474609375
+    }
+  },
+  "max_embedding_error": 0.0,
+  "passed": true
+}

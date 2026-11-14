@@ -1,0 +1,39 @@
+{
+  "module": "/tmp/hyperdrone-student-profiles-full/1m/student.wasm",
+  "module_sha256": "5471b2cb7cc66aaf53c8c83c949768c364b7bf69f48be101ff3e3244dc86dffd",
+  "bytes": 258899,
+  "frames_requested": 1200,
+  "frames_completed": 1200,
+  "simulated_duration_seconds": 60.0,
+  "limits": {
+    "init_fuel": 200000000000,
+    "step_fuel": 1000000,
+    "memory_bytes": 2147483648,
+    "table_elements": 1048576,
+    "init_wall_seconds": 300.0,
+    "step_wall_seconds": 60.0
+  },
+  "max_upload_bytes": 134217728,
+  "episode_timeout_seconds": 1440,
+  "passed": true,
+  "fuel_step_max": 803632,
+  "wall_step_seconds_max": 0.00021914392709732056,
+  "memory_bytes_observed_max": 67108864,
+  "width": 320,
+  "height": 240,
+  "fuel_init": 17731,
+  "wall_init_seconds_reported": 4.0795071981847286e-05,
+  "elapsed_seconds": 1.6106054990086704,
+  "profile_kind": "student resource check; not an accuracy evaluation",
+  "weights_sha256": "7eb4767fb58e39379e927adf6a36451943970827fbc78fa388b51846e778016e",
+  "weights": "untrained PyTorch initialization, seed 1701; resource test only",
+  "parameters": 58569,
+  "configuration": {
+    "fuel": 1000000,
+    "grid_width": 8,
+    "grid_height": 6,
+    "hidden": 192,
+    "aggregate": false,
+    "profile": "1m"
+  }
+}

@@ -1,0 +1,12 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "viobench: build native debug",
+            "type": "shell",
+            "command": "cmake -S viobench/solution/examples/native/cpp_minimal -B viobench/solution/examples/native/cpp_minimal/build-host && cmake --build viobench/solution/examples/native/cpp_minimal/build-host",
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

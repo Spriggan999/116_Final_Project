@@ -1,0 +1,31 @@
+{
+    // docs/DEBUGGING.md — adjust the solution / episode paths to yours
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "viobench: debug Python solution",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "viobench",
+            "args": [
+                "debug",
+                "${workspaceFolder}/viobench/solution/examples/python/dead_reckoning",
+                "${workspaceFolder}/data/val",
+                "--max-episodes", "1"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "viobench: debug native solution (gdb)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/viobench/solution/examples/native/cpp_minimal/build-host/debug",
+            "args": ["${workspaceFolder}/build/feed", "${workspaceFolder}/build/feed/estimate.tum"],
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "preLaunchTask": "viobench: build native debug"
+        }
+    ]
+}

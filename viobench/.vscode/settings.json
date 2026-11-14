@@ -1,0 +1,4 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/viobench/solution/examples/native/cpp_minimal",
+    "cmake.buildDirectory": "${workspaceFolder}/viobench/solution/examples/native/cpp_minimal/build-host"
+}

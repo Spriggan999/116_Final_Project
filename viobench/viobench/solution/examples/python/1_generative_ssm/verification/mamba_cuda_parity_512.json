@@ -1,0 +1,119 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "torch": "2.15.0+cu132",
+  "mamba": "2.3.2.post1",
+  "causal_conv1d": "1.7.0",
+  "dtype": "float32",
+  "tf32": false,
+  "atol": 5e-05,
+  "rtol": 0.0005,
+  "hidden": 512,
+  "layers": 3,
+  "checks": [
+    {
+      "name": "official_cuda_scan_vs_step",
+      "length": 11,
+      "batch": 2,
+      "max_abs_error": 5.960464477539062e-07,
+      "rmse": 1.3732146442180237e-07,
+      "tolerance_ratio_max": 0.00593301048502326
+    },
+    {
+      "name": "official_cuda_scan_vs_step",
+      "length": 101,
+      "batch": 2,
+      "max_abs_error": 8.344650268554688e-07,
+      "rmse": 1.7987427725074667e-07,
+      "tolerance_ratio_max": 0.01131447684019804
+    },
+    {
+      "name": "official_cuda_scan_vs_step",
+      "length": 257,
+      "batch": 2,
+      "max_abs_error": 8.344650268554688e-07,
+      "rmse": 1.8032295656666975e-07,
+      "tolerance_ratio_max": 0.00942196138203144
+    },
+    {
+      "name": "official_cuda_scan_vs_step",
+      "length": 513,
+      "batch": 2,
+      "max_abs_error": 9.5367431640625e-07,
+      "rmse": 1.8102016952070699e-07,
+      "tolerance_ratio_max": 0.011874731630086899
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_tokens",
+      "length": 11,
+      "batch": 2,
+      "max_abs_error": 4.202127456665039e-06,
+      "rmse": 1.0087202326758415e-06,
+      "tolerance_ratio_max": 0.05163196101784706
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_corrections",
+      "length": 11,
+      "batch": 2,
+      "max_abs_error": 1.6391277313232422e-07,
+      "rmse": 5.763163102301405e-08,
+      "tolerance_ratio_max": 0.002892168704420328
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_tokens",
+      "length": 101,
+      "batch": 2,
+      "max_abs_error": 5.21540641784668e-06,
+      "rmse": 1.05580556919449e-06,
+      "tolerance_ratio_max": 0.06336833536624908
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_corrections",
+      "length": 101,
+      "batch": 2,
+      "max_abs_error": 2.682209014892578e-07,
+      "rmse": 6.009320685507191e-08,
+      "tolerance_ratio_max": 0.0034186027478426695
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_tokens",
+      "length": 257,
+      "batch": 2,
+      "max_abs_error": 5.9604644775390625e-06,
+      "rmse": 9.712405244499678e-07,
+      "tolerance_ratio_max": 0.06652862578630447
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_corrections",
+      "length": 257,
+      "batch": 2,
+      "max_abs_error": 2.1141022443771362e-07,
+      "rmse": 5.8177068495979256e-08,
+      "tolerance_ratio_max": 0.0038977088406682014
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_tokens",
+      "length": 513,
+      "batch": 2,
+      "max_abs_error": 6.4373016357421875e-06,
+      "rmse": 9.774839782039635e-07,
+      "tolerance_ratio_max": 0.07939104735851288
+    },
+    {
+      "name": "official_cuda_hybrid_vs_deployment_corrections",
+      "length": 513,
+      "batch": 2,
+      "max_abs_error": 2.7334317564964294e-07,
+      "rmse": 5.812022152440477e-08,
+      "tolerance_ratio_max": 0.005141569301486015
+    },
+    {
+      "name": "official_cuda_vs_deployment_after_optimizer_step",
+      "max_abs_error": 5.125999450683594e-06,
+      "rmse": 9.744915132614551e-07,
+      "tolerance_ratio_max": 0.07124470919370651
+    }
+  ],
+  "passed": true,
+  "backward_finite": true,
+  "triton_fp32": "ieee"
+}

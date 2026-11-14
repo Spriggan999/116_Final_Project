@@ -1,0 +1,15 @@
+{
+  "source": "/var/tmp/hyperdrone-eecs116-aaq/conta/88801dd4e3fe14fd2469146516fb7b45c9b69eb2",
+  "passed": true,
+  "scope": "Load a repaired local scene and collect short real GPU rollouts.",
+  "removed_empty_primitives": 1,
+  "ticks": [
+    41,
+    41
+  ],
+  "frames": [
+    11,
+    11
+  ],
+  "seconds": 11.02255561900165
+}

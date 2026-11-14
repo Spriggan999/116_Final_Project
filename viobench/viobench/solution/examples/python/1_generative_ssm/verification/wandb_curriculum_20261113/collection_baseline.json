@@ -1,0 +1,20 @@
+{
+  "run": "20261113-170040-curriculum-ysc92q9_",
+  "batch": "batch-000005",
+  "observed_at": "2026-11-13T17:23:52.331161-08:00",
+  "stats": {
+    "episodes": 8,
+    "captures": 8008,
+    "seconds": 126.20093285799885,
+    "captures_per_second": 63.454364549036995,
+    "instances": 2,
+    "build_seconds": 15.282573573000263,
+    "rollout_seconds": 29.199672953000118,
+    "compression_level": 6,
+    "recording_bytes": 1004432655,
+    "compression_seconds": 81.28508481499375,
+    "write_seconds": 0.3053100209981494,
+    "simulated_captures": 8008,
+    "rollout_captures_per_second": 274.24964700425585
+  }
+}

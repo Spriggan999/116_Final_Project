@@ -1,0 +1,328 @@
+{
+  "date": "2026-11-12",
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "changes": [
+    "Producer fetches/collates the next minibatch while current students run.",
+    "Transfer shared teacher/student inputs once; preserve CPU observed-mask planning.",
+    "Cache student BF16 weight casts across camera ticks within each forward pass.",
+    "Persistent same-dataset loader workers with explicit shutdown on rolling replacement and run exit.",
+    "Fused CUDA AdamW for frame/state/auxiliary/native-student training; ordinary CPU fallback."
+  ],
+  "frame_optimizer_comparison": {
+    "ordinary": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "batch": 4,
+      "pairs": 8,
+      "chunk": 16,
+      "amp": true,
+      "fused_adamw": false,
+      "stage": "frame",
+      "warmup": 20,
+      "steps": 1000,
+      "frame": {
+        "seconds_per_step": 0.009262792611611075,
+        "samples_per_second": 863.6704215931444,
+        "peak_allocated_mib": 679.9208984375
+      }
+    },
+    "fused": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "batch": 4,
+      "pairs": 8,
+      "chunk": 16,
+      "amp": true,
+      "fused_adamw": true,
+      "stage": "frame",
+      "warmup": 20,
+      "steps": 1000,
+      "frame": {
+        "seconds_per_step": 0.008203624920686707,
+        "samples_per_second": 975.1786652052758,
+        "peak_allocated_mib": 679.947265625
+      }
+    },
+    "speedup": 1.1291097168830224
+  },
+  "short_state_optimizer_comparison": {
+    "ordinary": {
+      "seconds_per_step": 0.33119462701142766,
+      "samples_per_second": 12.077490616603459,
+      "peak_allocated_mib": 2682.22998046875
+    },
+    "fused": {
+      "seconds_per_step": 0.32517642867363367,
+      "samples_per_second": 12.301014610178393,
+      "peak_allocated_mib": 2682.23876953125
+    },
+    "note": "12 measured steps; small difference is not a firm speedup claim."
+  },
+  "compute_only_distillation": {
+    "before": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "torch": "2.15.0+cu132",
+      "batch": 4,
+      "window": 101,
+      "amp": true,
+      "steps": 8,
+      "warmup": 2,
+      "repeats": 3,
+      "scope": "Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.",
+      "serial": {
+        "seconds": [
+          2.755858446005732,
+          2.797258313978091,
+          2.7522931980201975
+        ],
+        "windows_per_second": 11.558731054267065,
+        "peak_allocated_mib": 2704.2158203125
+      },
+      "parallel": {
+        "seconds": [
+          1.893484058091417,
+          1.8600020420271903,
+          1.840767981018871
+        ],
+        "windows_per_second": 17.16046475680996,
+        "peak_allocated_mib": 2798.34814453125
+      },
+      "speedup": 1.4846322382831927
+    },
+    "transfer_and_casts_only": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "torch": "2.15.0+cu132",
+      "batch": 4,
+      "window": 101,
+      "amp": true,
+      "steps": 8,
+      "warmup": 2,
+      "repeats": 3,
+      "scope": "Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.",
+      "serial": {
+        "seconds": [
+          2.6717830889392644,
+          2.7030204529874027,
+          2.711138078942895
+        ],
+        "windows_per_second": 11.872457717506519,
+        "peak_allocated_mib": 2703.28173828125
+      },
+      "parallel": {
+        "seconds": [
+          1.8429133970057592,
+          1.799570542993024,
+          1.7962000760016963
+        ],
+        "windows_per_second": 17.651328835720236,
+        "peak_allocated_mib": 2773.2666015625
+      },
+      "speedup": 1.4867459843375554
+    },
+    "current": {
+      "gpu": "NVIDIA GeForce RTX 5080",
+      "torch": "2.15.0+cu132",
+      "batch": 4,
+      "window": 101,
+      "amp": true,
+      "fused_adamw": true,
+      "steps": 8,
+      "warmup": 2,
+      "repeats": 3,
+      "scope": "Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.",
+      "serial": {
+        "seconds": [
+          2.7135702340165153,
+          2.7220292210113257,
+          2.7167773650726303
+        ],
+        "windows_per_second": 11.7757069034521,
+        "peak_allocated_mib": 2703.28857421875
+      },
+      "parallel": {
+        "seconds": [
+          1.884063424076885,
+          1.843739390023984,
+          1.8305138060823083
+        ],
+        "windows_per_second": 17.27141625063386,
+        "peak_allocated_mib": 2760.51318359375
+      },
+      "speedup": 1.4666988905413965
+    },
+    "note": "Current steady compute throughput remains about 17 shared windows/s; small differences are within short-probe variability."
+  },
+  "real_streaming": {
+    "settings": {
+      "epochs": 3,
+      "batch": 1,
+      "window": 101,
+      "width": 640,
+      "height": 480,
+      "collector_instances": 2,
+      "loader_workers": 2,
+      "training_windows_per_epoch": 2,
+      "validation_windows": 1,
+      "recording_budget_mib": 512,
+      "profiles": [
+        "100",
+        "10k",
+        "1m",
+        "100m"
+      ]
+    },
+    "runs": {
+      "ordinary_workers": {
+        "epochs": [
+          {
+            "stage": "distillation",
+            "epoch": 1,
+            "seconds": 5.638335127034225,
+            "samples": 2,
+            "samples_per_second": 0.35471463737771897,
+            "peak_allocated_mib": 1474.40185546875,
+            "active_profiles": [
+              "100",
+              "10k",
+              "1m",
+              "100m"
+            ],
+            "parallel": true,
+            "student_updates": 8,
+            "recording_batch": "/tmp/hyperdrone-followup-streaming-no-persist/stream-data/run-088c7edb91454d2c8f6d7cdc530269b1/batch-000000",
+            "fresh_data_wait_seconds": 0.0,
+            "recording_pass": 1
+          },
+          {
+            "stage": "distillation",
+            "epoch": 2,
+            "seconds": 4.848196375998668,
+            "samples": 2,
+            "samples_per_second": 0.41252454415855316,
+            "peak_allocated_mib": 1538.5439453125,
+            "active_profiles": [
+              "100",
+              "10k",
+              "1m",
+              "100m"
+            ],
+            "parallel": true,
+            "student_updates": 8,
+            "recording_batch": "/tmp/hyperdrone-followup-streaming-no-persist/stream-data/run-088c7edb91454d2c8f6d7cdc530269b1/batch-000001",
+            "fresh_data_wait_seconds": 1.4239922165870667e-06,
+            "recording_pass": 1
+          },
+          {
+            "stage": "distillation",
+            "epoch": 3,
+            "seconds": 4.907422730932012,
+            "samples": 2,
+            "samples_per_second": 0.40754589723721685,
+            "peak_allocated_mib": 1549.923828125,
+            "active_profiles": [
+              "100",
+              "10k",
+              "1m",
+              "100m"
+            ],
+            "parallel": true,
+            "student_updates": 8,
+            "recording_batch": "/tmp/hyperdrone-followup-streaming-no-persist/stream-data/run-088c7edb91454d2c8f6d7cdc530269b1/batch-000002",
+            "fresh_data_wait_seconds": 1.710955984890461e-06,
+            "recording_pass": 1
+          }
+        ],
+        "warm_epoch_mean_seconds": 4.87780955346534,
+        "teacher_unchanged": true,
+        "checkpoints_finite_fp32": true,
+        "owned_recordings_cleaned": true
+      },
+      "persistent_workers": {
+        "epochs": [
+          {
+            "stage": "distillation",
+            "epoch": 1,
+            "seconds": 5.153769832919352,
+            "samples": 2,
+            "samples_per_second": 0.3880654481744871,
+            "peak_allocated_mib": 1474.54833984375,
+            "active_profiles": [
+              "100",
+              "10k",
+              "1m",
+              "100m"
+            ],
+            "parallel": true,
+            "student_updates": 8,
+            "recording_batch": "/tmp/hyperdrone-followup-streaming/stream-data/run-896ee455cb23472ca48c567f08a7c9b4/batch-000000",
+            "fresh_data_wait_seconds": 0.0,
+            "recording_pass": 1
+          },
+          {
+            "stage": "distillation",
+            "epoch": 2,
+            "seconds": 3.016295932000503,
+            "samples": 2,
+            "samples_per_second": 0.6630649130881321,
+            "peak_allocated_mib": 1543.57275390625,
+            "active_profiles": [
+              "100",
+              "10k",
+              "1m",
+              "100m"
+            ],
+            "parallel": true,
+            "student_updates": 8,
+            "recording_batch": "/tmp/hyperdrone-followup-streaming/stream-data/run-896ee455cb23472ca48c567f08a7c9b4/batch-000001",
+            "fresh_data_wait_seconds": 1.6239937394857407e-06,
+            "recording_pass": 1
+          },
+          {
+            "stage": "distillation",
+            "epoch": 3,
+            "seconds": 3.142116825096309,
+            "samples": 2,
+            "samples_per_second": 0.6365135707322715,
+            "peak_allocated_mib": 1569.31591796875,
+            "active_profiles": [
+              "100",
+              "10k",
+              "1m",
+              "100m"
+            ],
+            "parallel": true,
+            "student_updates": 8,
+            "recording_batch": "/tmp/hyperdrone-followup-streaming/stream-data/run-896ee455cb23472ca48c567f08a7c9b4/batch-000002",
+            "fresh_data_wait_seconds": 1.4989636838436127e-06,
+            "recording_pass": 1
+          }
+        ],
+        "warm_epoch_mean_seconds": 3.079206378548406,
+        "teacher_unchanged": true,
+        "checkpoints_finite_fp32": true,
+        "owned_recordings_cleaned": true
+      }
+    },
+    "warm_epoch_speedup": 1.584112577658672,
+    "warm_epoch_time_reduction_percent": 36.873173402990965,
+    "note": "Matched current-code runs differing only in persistent-worker flag; random full-size frozen teacher, real Hyperdrone data, fresh train batch every epoch. Warm mean excludes first epoch; includes validation and fresh-data wait, excludes initial recording setup and checkpoint/export. Tiny epochs emphasize startup; no accuracy or long-run speedup claim."
+  },
+  "tests": {
+    "cpu_suite": {
+      "passed": 92,
+      "skipped": 4,
+      "existing_export_tracing_warnings": 2
+    },
+    "host_cuda_performance_and_pipeline": {
+      "passed": 23
+    },
+    "host_worker_lifecycle": {
+      "passed": 2
+    },
+    "static_checks": "pyflakes passed"
+  },
+  "limitations": [
+    "GPU allocated memory excludes renderer/context and allocator reservations.",
+    "Persistent workers retain bounded CPU dataset/process state until replacement or cleanup.",
+    "BF16 and fused optimizers can change floating-point rounding; architecture, objectives, FP32 physics/validation and export ABI are preserved.",
+    "Worker reuse can change shuffle/worker RNG progression; exact training-trajectory reproducibility between worker policies is not claimed."
+  ]
+}

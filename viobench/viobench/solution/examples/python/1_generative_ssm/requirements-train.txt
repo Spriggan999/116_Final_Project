@@ -1,0 +1,8 @@
+# Host only. The bundled guest uses the runtime's own NumPy/OpenCV.
+numpy>=1.26
+opencv-python-headless==4.12.0.88
+torch>=2.5
+onnx>=1.16,<2
+wandb>=0.18
+pillow>=9
+hyperdrone==0.1.10

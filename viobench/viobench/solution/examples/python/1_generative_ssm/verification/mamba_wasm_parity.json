@@ -1,0 +1,54 @@
+{
+  "512": {
+    "passed": true,
+    "frames": 100,
+    "atol": 0.0005,
+    "rtol": 0.0005,
+    "max_abs_error_by_state_component": [
+      7.556638008665573e-07,
+      3.76515754147988e-05,
+      2.4427762233658612e-05,
+      5.255601384646091e-07,
+      9.154685932238893e-08,
+      2.71725107067744e-07,
+      1.1549713774261505e-07,
+      8.64867556282789e-06,
+      4.392703299771483e-05,
+      2.4250081561483228e-05,
+      1.7471518467399028e-07,
+      1.7700989063396122e-07,
+      1.968932480870926e-07
+    ],
+    "tolerance_ratio_max": 0.02228741763704218,
+    "fuel_step_max": 3003214838,
+    "checkpoint": "/tmp/hyperdrone-mamba-validation/hybrid-512",
+    "module": "/tmp/hyperdrone-mamba-validation/hybrid-512/hybrid.wasm",
+    "gpu": "NVIDIA GeForce RTX 5080"
+  },
+  "896": {
+    "passed": true,
+    "frames": 100,
+    "atol": 0.0005,
+    "rtol": 0.0005,
+    "max_abs_error_by_state_component": [
+      2.149475546531221e-05,
+      3.4893915728417824e-05,
+      0.00015928240069307265,
+      2.936176573542504e-07,
+      4.316215207189611e-07,
+      2.7658375845174277e-07,
+      1.821873550911235e-07,
+      3.2767079183315673e-06,
+      2.1462819750794893e-05,
+      0.00014311863058047436,
+      2.939964749842927e-07,
+      2.6006343983864255e-07,
+      2.322534956300526e-07
+    ],
+    "tolerance_ratio_max": 0.08014322476245762,
+    "fuel_step_max": 8619531321,
+    "checkpoint": "/tmp/hyperdrone-mamba-validation/hybrid-896",
+    "module": "/tmp/hyperdrone-mamba-validation/hybrid-896/hybrid.wasm",
+    "gpu": "NVIDIA GeForce RTX 5080"
+  }
+}

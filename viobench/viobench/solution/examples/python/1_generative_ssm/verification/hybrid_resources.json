@@ -1,0 +1,67 @@
+[
+  {
+    "hidden": 512,
+    "parameters": 6173145,
+    "module": "/tmp/hyperdrone-mamba-validation/hybrid-512/hybrid.wasm",
+    "module_sha256": "11225a73dae7077a31605e46688dc8e01eeaab6940eaf88454f005668e0330b4",
+    "bytes": 75365880,
+    "frames_requested": 1200,
+    "frames_completed": 1200,
+    "simulated_duration_seconds": 60.0,
+    "limits": {
+      "init_fuel": 200000000000,
+      "step_fuel": 20000000000,
+      "memory_bytes": 2147483648,
+      "table_elements": 1048576,
+      "init_wall_seconds": 300.0,
+      "step_wall_seconds": 60.0
+    },
+    "max_upload_bytes": 134217728,
+    "episode_timeout_seconds": 1440,
+    "passed": true,
+    "fuel_step_max": 3003197194,
+    "wall_step_seconds_max": 0.23696349700912833,
+    "memory_bytes_observed_max": 148045824,
+    "width": 640,
+    "height": 480,
+    "fuel_init": 2040908000,
+    "wall_init_seconds_reported": 0.11963303200900555,
+    "elapsed_seconds": 249.88195867999457
+  },
+  {
+    "hidden": 896,
+    "parameters": 18268593,
+    "module": "/tmp/hyperdrone-mamba-validation/hybrid-896/hybrid.wasm",
+    "module_sha256": "a700434a6d66b64c0ab30a5629f5db704f7c4330d058869fa517f7b24e2463d4",
+    "bytes": 123747672,
+    "frames_requested": 1200,
+    "frames_completed": 1200,
+    "simulated_duration_seconds": 60.0,
+    "limits": {
+      "init_fuel": 200000000000,
+      "step_fuel": 20000000000,
+      "memory_bytes": 2147483648,
+      "table_elements": 1048576,
+      "init_wall_seconds": 300.0,
+      "step_wall_seconds": 60.0
+    },
+    "max_upload_bytes": 134217728,
+    "episode_timeout_seconds": 1440,
+    "passed": true,
+    "fuel_step_max": 8619557202,
+    "wall_step_seconds_max": 0.7456761009525508,
+    "memory_bytes_observed_max": 341442560,
+    "width": 640,
+    "height": 480,
+    "fuel_init": 4376947501,
+    "wall_init_seconds_reported": 0.3197401110082865,
+    "elapsed_seconds": 672.3853941980051
+  },
+  {
+    "hidden": 1792,
+    "parameters": 71937705,
+    "raw_weight_mib": 274.4205665588379,
+    "passed": false,
+    "reason": "FP32 weights alone exceed upload cap, before runtime/assets"
+  }
+]

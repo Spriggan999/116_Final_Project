@@ -1,0 +1,64 @@
+# The submission server: the REST API (app) and the evaluation worker, sharing the server-data volume, and a Cloudflare
+# tunnel in front of the app. The worker downloads episodes into conta-cache as evaluation reads them. From the
+# viobench repository root, with
+# TUNNEL_TOKEN (below) in viobench/tools/server/.env (gitignored, chmod 600; write it with an editor, not on the command
+# line, which keeps it in the shell history):
+#
+#   docker compose -f viobench/tools/server/compose.yaml up -d --build --remove-orphans
+#   docker compose -f viobench/tools/server/compose.yaml exec app python -m viobench.tools.server.teams add --type participant "team a"
+#   docker compose -f viobench/tools/server/compose.yaml exec app python -m viobench.tools.server.teams add --type admin admin
+#
+# WORKER_JOBS overrides the default 16 concurrent evaluations. Run one worker container; do not scale replicas.
+# The worker and evaluation host have network access; wasmtime still sandboxes the guest.
+# No port is published: the tunnel service connects out to Cloudflare, which terminates TLS. Create a tunnel in the
+# Cloudflare dashboard (Zero Trust > Networks > Tunnels), give it a public hostname with service http://app:8000 and put
+# its token in TUNNEL_TOKEN. Compose copies it into the tunnel container as a secret file, not a bind mount, so a daemon
+# in a VM without host mounts works too; it stays out of the container's environment and `docker inspect`. Rotate it in
+# the dashboard if it leaks. Cloudflare's request body limit (100 MB on Free and Pro) caps the uploads.
+name: viobench-server
+
+x-server: &server
+  build:
+    context: ../../..
+    dockerfile: viobench/tools/server/Dockerfile
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+services:
+  app:
+    <<: *server
+    command: uvicorn viobench.tools.server.app:app --host 0.0.0.0 --port 8000  # reachable only on the compose network
+    volumes: [server-data:/srv/server-data]
+
+  tunnel:
+    image: cloudflare/cloudflared:latest  # Cloudflare supports a release for a year: `docker compose pull` now and then
+    command: tunnel --no-autoupdate run --token-file /run/secrets/tunnel_token
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    secrets: [{source: tunnel_token, uid: "65532", gid: "65532", mode: 0400}]  # cloudflared's user
+    depends_on: [app]
+
+  worker:
+    <<: *server
+    command: python -m viobench.tools.server.worker --jobs ${WORKER_JOBS:-16}  # one supervisor; requeues interrupted jobs on startup
+    mem_limit: 40g  # fixed total cap: 2.5 GiB per job at the default 16 jobs
+    environment:
+      CONTA_SEARCH_PATHS: /srv/private-episodes
+    volumes:
+      - server-data:/srv/server-data
+      - conta-cache:/srv/conta
+      - type: bind
+        source: ./evaluation-data/viobench-private/data
+        target: /srv/private-episodes
+        read_only: true
+        bind: {create_host_path: false}
+
+volumes:
+  server-data:
+  conta-cache:
+
+secrets:
+  tunnel_token:
+    environment: TUNNEL_TOKEN  # from .env

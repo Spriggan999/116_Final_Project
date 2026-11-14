@@ -1,0 +1,112 @@
+{
+  "profile_kind": "short architecture capacity search; not trained models or accuracy evaluation",
+  "weights": "random initialization with nonzero output heads; torch seed 1701",
+  "frames_per_candidate": 3,
+  "selected": {
+    "flow_base": 33,
+    "gru_hidden": 1792
+  },
+  "selection": "Close to upload and step fuel caps with modest headroom; larger nearby widths exceeded fuel or left less than 2% fuel headroom.",
+  "candidates": [
+    {
+      "flow_base": 24,
+      "gru_hidden": 1024,
+      "bytes": 78526376,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 13649647759,
+      "failure": null,
+      "module_sha256": "b9e05574724d0e4b12acdb09593ba082c78bf50cc84bdc2da408d4a418de708b"
+    },
+    {
+      "flow_base": 24,
+      "gru_hidden": 1792,
+      "bytes": 130799528,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 16193280761,
+      "failure": null,
+      "module_sha256": "74f04de723952502903c5ce227e4db10c5e2c8dad1145a9113733a7a51d9e3e2"
+    },
+    {
+      "flow_base": 32,
+      "gru_hidden": 1024,
+      "bytes": 79920583,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 16310702022,
+      "failure": null,
+      "module_sha256": "c043dae0c223566cd77af92597b12b5fbd4aaa5070aa1e677dc177a4279631b0"
+    },
+    {
+      "flow_base": 32,
+      "gru_hidden": 1792,
+      "bytes": 132193735,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 18837078053,
+      "failure": null,
+      "module_sha256": "bf00b09d094379eb01f67238cb9d967c9753b28cb0ab4079bd64003f59a78a1e"
+    },
+    {
+      "flow_base": 32,
+      "gru_hidden": 256,
+      "bytes": 55958982,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 15103519779,
+      "failure": null,
+      "module_sha256": "c943aa42c76cc7b4e16557373ed03f5fba75db51a5e094f9bdcc413c50cf1832"
+    },
+    {
+      "flow_base": 33,
+      "gru_hidden": 1792,
+      "bytes": 132394931,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 19513844357,
+      "failure": null,
+      "module_sha256": "be2a240e560a8f2a65aec7c07448a5de07dd9b7cbc5b548147632271669bc138"
+    },
+    {
+      "flow_base": 34,
+      "gru_hidden": 1792,
+      "bytes": 132602999,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 19756823291,
+      "failure": null,
+      "module_sha256": "a6c2a320b7c48b189069fb39829f12309dd68c79d860cf75f6aaeb6c1d3d6e4b"
+    },
+    {
+      "flow_base": 35,
+      "gru_hidden": 1792,
+      "bytes": 132816723,
+      "passed": false,
+      "frames_completed": 1,
+      "fuel_step_max": null,
+      "failure": "step fuel exceeded 20 G",
+      "module_sha256": "e99bb19c684bee1c1e2e5948218d09806602ab01f8550099f31d9069c6868a5b"
+    },
+    {
+      "flow_base": 36,
+      "gru_hidden": 1792,
+      "bytes": 133037191,
+      "passed": false,
+      "frames_completed": 1,
+      "fuel_step_max": null,
+      "failure": "step fuel exceeded 20 G",
+      "module_sha256": "f791b084be5961d0078189b5434ab9221475f2b3fa9a6bcaa3d99c6ecf467b49"
+    },
+    {
+      "flow_base": 36,
+      "gru_hidden": 256,
+      "bytes": 56802438,
+      "passed": true,
+      "frames_completed": 3,
+      "fuel_step_max": 16580519469,
+      "failure": null,
+      "module_sha256": "17feb3992ba07bc5bdf9a24c1149672371cd24338e02579a0b5c73880189582e"
+    }
+  ]
+}

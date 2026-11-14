@@ -1,0 +1,117 @@
+# Student guide
+
+## Setup
+
+Linux or macOS; on Windows, WSL2 with your files inside the WSL filesystem. Needs git, curl, CMake, a C compiler, make
+and Python 3.10–3.14 with venv (Ubuntu: `sudo apt install build-essential cmake curl git python3-venv xz-utils`;
+macOS: `xcode-select --install`, `brew install cmake`, Python from Homebrew or python.org).
+
+```bash
+git clone <repo> viobench
+python -m venv .venv && source .venv/bin/activate && pip install -e "./viobench"         # lab machines: "./viobench[train]"
+viobench init python my_workspace && cd my_workspace                                   # C/C++: viobench init native
+```
+
+The workspace holds your code in `solution/` (the minimal example to start from) and your copy of the build recipe in
+`toolchain/` and `runtime/`: change it to add a package to the Python runtime or a library for native code
+(`runtime/python/README.md`, `runtime/native/README.md`). Everything built lands in `build/`. Other starting points
+(`dead_reckoning`, `klt_imu`, `tiny_cnn`) are in `viobench/solution/examples/` of the clone: copy one over `solution/`.
+
+The validation episodes are the public set, `viobench.episodes.public`: `viobench evaluate` and `viobench debug` use it
+when given no episodes, downloading each archive (~200 MB) once into conta's cache (`~/.cache/conta`, or `$CONTA_CACHE`).
+An episode is one `.zip`, read in place; `conta <sha1>` (hashes in `viobench/episodes/__init__.py`) prints its path,
+for tools that take a path or need the EuRoC directory layout (`unzip`). Generate training data on the lab GPUs:
+
+```bash
+viobench simulate -o data/train --episodes 200 --seed 1                          # ~2 min per 8 one-minute episodes
+viobench simulate -o data/train-scenes --scene-names ProcTHOR-Train-7 ProcTHOR-Train-23 --episodes 50   # 50 episodes in each scene
+viobench simulate -o data/train-short --episodes 64 --seed 900 --duration 15
+```
+
+`simulate` also writes `trajectory.mp4` inside each episode directory by default: camera playback with ground-truth
+trajectory maps at the episode's frame rate. Add `--no-video` to skip video encoding.
+
+`--fov` sets the base horizontal field of view in degrees (default: 120); each episode samples uniformly within
+`--fov-range` degrees of it (default: 15). For example, `--fov 90 --fov-range 10` gives 80–100°, and `--fov-range 0`
+keeps the FOV fixed at the base value.
+
+## Workflow
+
+```bash
+viobench bundle solution -o solution.wasm        # after every edit; Python: the first time also builds the runtime (10–15 min)
+viobench check solution.wasm                     # a few synthetic frames: errors, fuel per step
+viobench evaluate solution.wasm                  # metrics and fuel on the public set
+viobench evaluate solution.wasm -o report-solution   # also save trajectory videos
+viobench evaluate solution.wasm data/train-short # or on other episodes: paths, directories, conta hashes
+viobench debug solution                          # in-process, with breakpoint() (docs/DEBUGGING.md)
+```
+
+`bundle` embeds Python code into the runtime and compiles native code (a `CMakeLists.txt`) with wasi-sdk. `evaluate`
+writes `report-solution/report.json` and, per episode, `estimate.tum` (readable by `evo`) and `twist.txt` under
+`logs/<hash>/`. An episode is known by its hash, the sha1 of its archive, in reports and on the server.
+
+## Submit
+
+Your team gets a token from the instructors that gives access to its submissions. Open `https://<server>/` in a
+browser and sign in with it to submit and follow your submissions, or use the API directly:
+
+```bash
+curl -F file=@solution.wasm -F label="klt+imu v3" -H "Authorization: Bearer $TOKEN" https://<server>/submissions
+curl -H "Authorization: Bearer $TOKEN" https://<server>/submissions          # yours, newest first: id, times, status
+curl -H "Authorization: Bearer $TOKEN" https://<server>/submissions/<id>     # current results and per-episode progress
+curl -H "Authorization: Bearer $TOKEN" https://<server>/config               # the rules: quota, limits, timeouts
+```
+
+The instructors select the server's episode set, initially the public set; `/config` lists its `evaluation_hashes`.
+Results and progress use the current set and update as episodes finish. The server returns metrics only, no logs.
+Instructors can change competition settings without restarting the server; check the page's **Rules** or `/config`
+(`uploads` and `evaluation`). Local `viobench evaluate` uses the checked-in defaults, which may differ from the saved
+server settings. To match server limits, save `/config`'s `evaluation.limits` object to `limits.json` and run
+`viobench evaluate solution.wasm --limits limits.json`. `viobench check` uses the packaged defaults.
+The default server episode timeout is 24 minutes, including any archive download.
+Your upload form shows today's usage and remaining allowance, including any team override or extra uploads.
+The default is one upload per day, resetting at midnight Pacific time. Failed evaluations do not refund uploads.
+Queued or running evaluations do not block another upload; extra evaluations of an existing submission do not count as uploads.
+
+The comparison plot shows your submissions alongside shared baselines. Lower **Sim(3)-aligned ATE** and lower
+**maximum fuel per frame** are better. Each submission uses the mean ATE (equal weight per episode) and maximum fuel over the
+whole selected set. The dashed frontier uses baselines; the solid frontier combines baselines and your submissions.
+Shading marks your improvement beyond the baselines in logarithmic coordinates, so equal proportional improvements
+have equal weight. The plot, frontiers and area score use floors of `1` fuel/frame and `0.001 m` ATE; reported metrics
+and labels stay unchanged. The reference bounds are `1.2 × step_fuel` and `1.2 ×` the worst eligible baseline ATE
+after applying the floor (`0.0012 m` when all baseline errors are zero). Improvement is the shaded area as a percentage
+of this log-space rectangle, unavailable without a baseline. Nonbaseline uploads do not change the references.
+The plot zooms each lower bound to one tenth of the visible minimum, never below its scoring floor.
+The full scoring reference and percentage denominator stay unchanged, as does the upper fuel bound `1.2 × step_fuel`.
+The fuel interval above `step_fuel` still earns area, but has less relative weight than on linear axes.
+Points appear once every selected episode has a scored report, and update when the instructors change the set and
+fill in the missing evaluations.
+If evaluation settings change, older results remain visible with an **outdated** warning but leave the plot and area
+calculation until rerun. Running evaluations finish with their original settings; the details' Raw JSON records
+each job's settings. Upload quotas and allowances do not affect result validity.
+
+After a solution error, the failed and remaining frames are scored with zero position, identity rotation, and zero
+twist. Sim(3) alignment and ATE include every frame. Fuel counts actual attempted steps, including a failing step;
+the fallback predictions do not add fuel. Other teams' submissions and baseline submission details remain private.
+
+## Tips
+
+- Python loops over pixels are expensive; OpenCV calls are cheap.
+- Keep the per-frame cost flat: episodes have no announced length.
+- Gray input: `cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)`.
+- Learned models: `viobench/solution/examples/python/tiny_cnn`. C, C++, Rust: `viobench init native`, `runtime/native/README.md`.
+
+## Common problems
+
+| symptom | fix |
+|---|---|
+| `CMakeCache.txt directory … is different` | the workspace moved: `viobench build-runtime --force`, delete `solution/build` |
+| `… is not inside a workspace` | run the command on `solution/` of a workspace (`viobench init`) |
+| `ModuleNotFoundError: scipy` | the runtime has numpy and OpenCV only (`docs/RUNTIME.md`) |
+| `trap OUT_OF_FUEL` | less work per step: resolution, feature count, iterations |
+| `MemoryError` | do not keep every frame |
+| `step returned an unusable state` | NaN/inf or a zero quaternion: guard divisions, normalise quaternions |
+| `step() must return 13 values` | append the twist to the pose |
+| frames look identical | you kept a view of the frame buffer: `frame.copy()` |
+| `np.load` fails on `.npz` | save with `np.savez`, not `np.savez_compressed` |
+| the IMU looks upside down | the IMU need not start gravity-aligned: estimate gravity |

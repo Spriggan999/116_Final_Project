@@ -1,0 +1,105 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "torch": "2.15.0+cu132",
+  "stored_camera_bytes": 7372800000,
+  "float32_camera_bytes_equivalent": 29491200000,
+  "load_seconds": 11.094308760017157,
+  "passed": true,
+  "checks": {
+    "embedding_step": {
+      "loss": 0.08925832808017731,
+      "seconds": 0.5126336949178949,
+      "peak_cuda_allocated_mib": 230.55810546875
+    },
+    "state_step": {
+      "loss": 0.006045521702617407,
+      "seconds": 10.960603678016923,
+      "peak_cuda_allocated_mib": 802.232421875,
+      "loader_workers": 2,
+      "window": 101,
+      "batch": 4
+    }
+  },
+  "train": {
+    "episodes": 8,
+    "scenes": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "ticks": [
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000
+    ],
+    "captures": 4000,
+    "recording_bytes": 742968596,
+    "collection": {
+      "episodes": 8,
+      "captures": 4000,
+      "seconds": 48.648852110956796,
+      "captures_per_second": 82.22187834724083,
+      "instances": 2,
+      "build_seconds": 3.0957816529553384,
+      "rollout_seconds": 9.558924655197188,
+      "simulated_captures": 4000,
+      "rollout_captures_per_second": 418.45711147280565
+    }
+  },
+  "validation": {
+    "episodes": 8,
+    "scenes": [
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199
+    ],
+    "ticks": [
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000
+    ],
+    "captures": 4000,
+    "recording_bytes": 311352485,
+    "collection": {
+      "episodes": 8,
+      "captures": 4000,
+      "seconds": 57.27933199692052,
+      "captures_per_second": 69.83321663414388,
+      "instances": 1,
+      "build_seconds": 14.266364300157875,
+      "rollout_seconds": 11.05928517098073,
+      "simulated_captures": 4000,
+      "rollout_captures_per_second": 361.68702932951703
+    }
+  },
+  "process_peak_rss_mib": 10264.94921875,
+  "elapsed_seconds": 33.463594855042174,
+  "defaults": {
+    "training_scene_pool": 192,
+    "heldout_scenes": 8,
+    "training_scenes_per_batch": 4,
+    "training_flights_per_scene": 2,
+    "validation_flights_per_scene": 1,
+    "collection_samples": 2000,
+    "native_imu_hz": 200,
+    "recording_budget_mib": 3072,
+    "simultaneous_training_flights": 2
+  },
+  "scope": "Resource and workflow smoke test using random weights; not an accuracy evaluation or exhaustive profiling of all 200 scenes."
+}

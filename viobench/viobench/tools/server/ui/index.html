@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>viobench submissions</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>viobench submissions</h1>
+  <div id="account" hidden>
+    <span id="team-name" class="hint"></span>
+    <button id="sign-out" type="button">Sign out</button>
+  </div>
+</header>
+
+<noscript>
+  <p>This page needs JavaScript. Without it, use the API directly:</p>
+  <pre>curl -F file=@solution.wasm -F label="v1" -H "Authorization: Bearer $TOKEN" https://&lt;server&gt;/submissions
+curl -H "Authorization: Bearer $TOKEN" https://&lt;server&gt;/submissions</pre>
+</noscript>
+
+<p id="notice" role="status" hidden></p>
+<p id="connection" class="error" role="status" hidden></p>
+
+<section id="sign-in" hidden>
+  <form id="token-form">
+    <label for="token">Team or admin token</label>
+    <input id="token" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+    <label class="inline"><input id="remember" type="checkbox"> Remember on this device</label>
+    <button type="submit">Sign in</button>
+  </form>
+</section>
+
+<main id="team" hidden>
+  <p id="pause-banner" class="info" role="status" hidden></p>
+
+  <section id="pause-controls" hidden>
+    <h2>Submission access</h2>
+    <p id="pause-status" class="hint"></p>
+    <form id="pause-form">
+      <label for="pause-message">Message to teams</label>
+      <textarea id="pause-message" rows="3" maxlength="1000" required></textarea>
+      <button id="pause-button" type="submit">Pause submissions</button>
+      <button id="resume-button" type="button" disabled>Resume submissions</button>
+    </form>
+  </section>
+
+  <section id="evaluation-controls" hidden>
+    <h2>Evaluation episodes</h2>
+    <p id="evaluation-status" class="hint"></p>
+    <form id="evaluation-form">
+      <label for="evaluation-preset">Preset</label>
+      <select id="evaluation-preset"></select>
+      <label class="inline"><input id="evaluation-backfill" type="checkbox"> Also evaluate all existing submissions</label>
+      <button id="evaluation-save" type="submit">Save</button>
+      <button id="evaluation-fill" type="button">Fill missing for current set</button>
+      <button id="evaluation-rerun" type="button">Rerun outdated for current set</button>
+      <button id="evaluation-rerun-failed" type="button">Rerun all failed jobs</button>
+    </form>
+    <p class="hint">New uploads use the saved set. Filling missing evaluations includes all submissions and keeps existing results.</p>
+    <p id="evaluation-outdated" class="hint"></p>
+    <p class="hint">Rerun all failed jobs retries jobs marked failed across all submissions and episodes, including outside the current set.</p>
+  </section>
+
+  <section id="settings-controls" hidden>
+    <h2>Competition settings</h2>
+    <p class="hint">Saved evaluation settings apply when a job starts. Existing results stay visible but become outdated when their settings differ; rerun them to restore comparison points. Polling keeps your edits.</p>
+    <form id="settings-form">
+      <div id="settings-fields"></div>
+      <button id="settings-save" type="submit">Save competition settings</button>
+    </form>
+  </section>
+
+  <section id="teams-controls" hidden>
+    <h2>Team allowances</h2>
+    <p class="hint">Leave the daily override blank to use the global quota. Extra uploads apply only to today; Save sets the extra allowance to the entered total. Polling updates saved values without changing your edits.</p>
+    <div id="team-allowances"></div>
+  </section>
+
+  <section id="upload-section">
+    <h2>Submit</h2>
+    <form id="upload-form">
+      <label for="file">Solution (.wasm)</label>
+      <input id="file" type="file" accept=".wasm" required>
+      <label for="label">Label</label>
+      <input id="label" maxlength="80" placeholder="optional, up to 80 characters">
+      <button id="upload-button" type="submit">Submit</button>
+      <progress id="upload-progress" max="1" value="0" hidden></progress>
+      <p id="upload-hint" class="hint" hidden></p>
+    </form>
+  </section>
+
+  <section>
+    <h2>Comparison with baselines</h2>
+    <p class="hint">Current-set results: maximum fuel per frame and mean Sim(3) ATE across all selected episodes, with equal weight per episode. Lower is better on both axes. Only submissions with all reports evaluated under the current settings appear.</p>
+    <p class="comparison-legend"><span class="own-key">● Your submissions</span> <span>■ Baselines</span> <span>┄ Baseline frontier</span> <span class="own-key">━ Pareto frontier (baselines + yours)</span></p>
+    <p class="hint">Shading shows your extra area beyond the baselines. Both axes and the area use logarithmic scales, rewarding proportional improvements. Values below 1 fuel/frame or 1 mm ATE are clamped for the plot and area; Exact values keeps the raw scores. The upper reference uses 1.2× the fuel limit and 1.2× the worst baseline mean ATE after clamping.</p>
+    <p class="hint">The displayed lower bounds follow the lowest points with a 10× margin, limited by the log floors. This zoom does not change the claimed-area score.</p>
+    <div id="comparison-charts"></div>
+  </section>
+
+  <section>
+    <div class="heading">
+      <h2 id="submissions-title">Submissions</h2>
+      <button id="refresh" type="button">Refresh</button>
+      <span id="updated" class="hint"></span>
+    </div>
+    <p id="evaluation-summary" class="hint"></p>
+    <div class="scroll">
+      <table id="submissions">
+        <thead><tr><th>Submitted</th><th id="team-column" hidden>Team</th><th id="account-column" hidden>Account</th><th>Label</th><th>Status</th><th>Mean Sim(3) ATE (m)</th><th>Max fuel/frame</th><th>Episodes</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="empty" class="hint" hidden>No submissions yet.</p>
+  </section>
+
+  <section id="details" hidden>
+    <div class="heading">
+      <h2 id="details-title"></h2>
+      <button id="delete-submission" class="error" type="button" hidden>Delete submission</button>
+    </div>
+    <p id="delete-hint" class="hint" hidden>Wait until all running evaluations finish before deleting this submission.</p>
+    <dl id="details-facts"></dl>
+    <p id="details-progress" class="hint"></p>
+    <form id="schedule-form" hidden>
+      <label for="schedule-hashes">Episode hashes (optional)</label>
+      <textarea id="schedule-hashes" rows="2" placeholder="Leave blank for the current set; otherwise separate hashes with spaces or commas"></textarea>
+      <button id="schedule-button" type="submit">Fill missing evaluations for this submission</button>
+    </form>
+    <div id="details-results"></div>
+    <h3>All scheduled evaluations</h3>
+    <div id="details-jobs"></div>
+    <details><summary>Raw JSON</summary><pre id="details-json"></pre></details>
+  </section>
+
+  <section>
+    <details><summary>Rules</summary><dl id="rules"></dl></details>
+  </section>
+</main>
+</body>
+</html>

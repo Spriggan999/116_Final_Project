@@ -1,0 +1,95 @@
+{
+  "scope": "CPU NPZ I/O on bounded real-recording prefixes; excludes collection/training.",
+  "frames_per_sample": 32,
+  "repeats": 2,
+  "samples": [
+    {
+      "file": "rollout_s192_e000.npz",
+      "frames": 32,
+      "raw_bytes": 29504844,
+      "levels": {
+        "1": {
+          "seconds": 0.05566760150031769,
+          "read_seconds": 0.02472310449957149,
+          "bytes": 1623106.0,
+          "compression_seconds": 0.0550781210004061,
+          "write_seconds": 0.00048059900109365117
+        },
+        "6": {
+          "seconds": 0.16725340049924853,
+          "read_seconds": 0.0253748090017325,
+          "bytes": 1284147.0,
+          "compression_seconds": 0.16676224549883045,
+          "write_seconds": 0.00040448500112688635
+        }
+      }
+    },
+    {
+      "file": "rollout_s321_e000.npz",
+      "frames": 32,
+      "raw_bytes": 29504844,
+      "levels": {
+        "1": {
+          "seconds": 0.21018353249928623,
+          "read_seconds": 0.07680216300104803,
+          "bytes": 8806884.0,
+          "compression_seconds": 0.2076305609989504,
+          "write_seconds": 0.0024650585000927094
+        },
+        "6": {
+          "seconds": 1.4255642570024065,
+          "read_seconds": 0.06071425349909987,
+          "bytes": 6849521.0,
+          "compression_seconds": 1.4236172914988856,
+          "write_seconds": 0.0018550734985183226
+        }
+      }
+    },
+    {
+      "file": "rollout_s193_e000.npz",
+      "frames": 32,
+      "raw_bytes": 29504844,
+      "levels": {
+        "1": {
+          "seconds": 0.1882103485004336,
+          "read_seconds": 0.07294277399887505,
+          "bytes": 9733953.0,
+          "compression_seconds": 0.18524252200040792,
+          "write_seconds": 0.002873387998988619
+        },
+        "6": {
+          "seconds": 0.931901279000158,
+          "read_seconds": 0.06833877949975431,
+          "bytes": 8478388.0,
+          "compression_seconds": 0.9293623285011563,
+          "write_seconds": 0.0024580769986641826
+        }
+      }
+    },
+    {
+      "file": "rollout_s322_e000.npz",
+      "frames": 32,
+      "raw_bytes": 29504844,
+      "levels": {
+        "1": {
+          "seconds": 0.18796183149788703,
+          "read_seconds": 0.07084828050028591,
+          "bytes": 8485360.0,
+          "compression_seconds": 0.18537515749812883,
+          "write_seconds": 0.002504277501429897
+        },
+        "6": {
+          "seconds": 0.9657305505006661,
+          "read_seconds": 0.06406774499919266,
+          "bytes": 6958418.0,
+          "compression_seconds": 0.96366322600079,
+          "write_seconds": 0.0019880620002368232
+        }
+      }
+    }
+  ],
+  "roundtrip_exact": true,
+  "write_path_speedup": 5.43663977756073,
+  "compression_speedup": 5.500173849168364,
+  "size_ratio": 1.2154741987793711
+}

@@ -1,0 +1,9 @@
+# Optional host dependency for USE_HYBRID_SSM_TRANSFORMER=true.
+# Install requirements-train.txt and compatible CUDA PyTorch first, then use
+# pip install --no-build-isolation -r requirements-mamba.txt
+# Verified numerically: RTX 5080, torch 2.15.0+cu132, Triton 3.9.
+# That newer PyTorch needs C++20 when building these upstream CUDA extensions;
+# see verification/README.md for the toolchain details used in this check.
+mamba-ssm==2.3.2.post1
+causal-conv1d==1.7.0
+transformers==4.57.6

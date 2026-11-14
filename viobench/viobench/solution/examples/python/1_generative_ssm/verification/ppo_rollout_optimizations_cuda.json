@@ -1,0 +1,38 @@
+{
+  "scope": "Synthetic CUDA PPO action/reward/GAE timing with precomputed causal tokens.\n\nExcludes image encoding, backbone inference, data collection and optimizer work.\n",
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "cases": [
+    {
+      "window": 401,
+      "vectorized": false,
+      "seconds": 0.3192965339985676,
+      "peak_allocated_mib": 36.6943359375,
+      "transitions": 399,
+      "finite": true
+    },
+    {
+      "window": 401,
+      "vectorized": true,
+      "seconds": 0.0023644860011700075,
+      "peak_allocated_mib": 35.55908203125,
+      "transitions": 399,
+      "finite": true
+    },
+    {
+      "window": 4001,
+      "vectorized": false,
+      "seconds": 8.606136522997986,
+      "peak_allocated_mib": 95.46240234375,
+      "transitions": 3999,
+      "finite": true
+    },
+    {
+      "window": 4001,
+      "vectorized": true,
+      "seconds": 0.006885234000947094,
+      "peak_allocated_mib": 82.44873046875,
+      "transitions": 3999,
+      "finite": true
+    }
+  ]
+}

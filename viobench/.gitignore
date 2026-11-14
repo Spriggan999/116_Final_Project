@@ -1,0 +1,17 @@
+build/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+viobench/solution/examples/native/*/build/
+viobench/solution/examples/native/*/build-host/
+report-*/
+server-data/
+/viobench/tools/server/evaluation-data/
+*.egg-info/
+data
+/**/.DS_Store
+output
+dist
+.env
+*.wasm

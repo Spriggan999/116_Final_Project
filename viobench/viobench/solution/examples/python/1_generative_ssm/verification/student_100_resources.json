@@ -1,0 +1,40 @@
+{
+  "module": "/tmp/hyperdrone-student-100-final/student.wasm",
+  "module_sha256": "c91950603719c7c3983f99a8cc8eae21b381e0891fd5121c3b66316a86417c4f",
+  "bytes": 20994,
+  "frames_requested": 1200,
+  "frames_completed": 1200,
+  "simulated_duration_seconds": 60.0,
+  "limits": {
+    "init_fuel": 200000000000,
+    "step_fuel": 100,
+    "memory_bytes": 2147483648,
+    "table_elements": 1048576,
+    "init_wall_seconds": 300.0,
+    "step_wall_seconds": 60.0
+  },
+  "max_upload_bytes": 134217728,
+  "episode_timeout_seconds": 1440,
+  "passed": true,
+  "fuel_step_max": 99,
+  "wall_step_seconds_max": 0.0006469920044764876,
+  "memory_bytes_observed_max": 67108864,
+  "width": 320,
+  "height": 240,
+  "fuel_init": 11910,
+  "wall_init_seconds_reported": 4.050997085869312e-05,
+  "elapsed_seconds": 1.5520718679763377,
+  "profile_kind": "student resource check; not an accuracy evaluation",
+  "weights_sha256": "8964a1b824fae062ddc13e44057b4bac610163b9da2c68911fcec27eeb5cd7de",
+  "parameters": 6,
+  "configuration": {
+    "fuel": 100,
+    "grid_width": 0,
+    "grid_height": 0,
+    "hidden": 0,
+    "aggregate": true,
+    "kind": "imu_affine",
+    "profile": "100"
+  },
+  "weights": "nonzero affine test coefficients; not a trained-model accuracy result"
+}

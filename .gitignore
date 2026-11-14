@@ -1,0 +1,40 @@
+# Local environments and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+
+# Generated builds, simulator data, model weights and evaluation output
+build/
+build-host/
+dist/
+checkpoints/
+data/
+stream-data/
+server-data/
+evaluation-data/
+report-*/
+wandb/
+*.pt
+*.pth
+*.wasm
+*.cwasm
+*.onnx
+*.npz
+*.mp4
+*.log
+
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+.aws/
+.ssh/
+.git-credentials
+.netrc
