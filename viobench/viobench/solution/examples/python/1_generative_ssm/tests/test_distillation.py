@@ -14,18 +14,18 @@ import torch
 
 HERE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(HERE));sys.path.insert(0,str(HERE.parents[4]))
-from students.model import BudgetStudent,PROFILES,camera_frames,integrate,qmatrix
+from students.model import BudgetStudent,PROFILES,LEGACY_PROFILES,camera_frames,integrate,qmatrix
 from students.export import WORKSPACE,write_sources,ordered_weights,export_student,build
 from viobench.tools.abi.config import default_guest_config
 from viobench.tools.geometry import matrix_to_quaternion
 
 
-@pytest.mark.parametrize('profile',[name for name,spec in PROFILES.items() if spec.get('kind') not in ('imu_affine','visual_imu_affine')])
+@pytest.mark.parametrize('profile',[name for name,spec in LEGACY_PROFILES.items() if spec.get('kind') not in ('imu_affine','visual_imu_affine')])
 def test_native_math_matches_torch_with_extrinsics_and_lever_arm(tmp_path,profile):
     if not shutil.which('cc'):pytest.skip('host C compiler not installed')
-    if PROFILES[profile].get('kind')=='mamba2' and not torch.cuda.is_available():pytest.skip('official Mamba-2 needs CUDA')
+    if LEGACY_PROFILES[profile].get('kind')=='mamba2' and not torch.cuda.is_available():pytest.skip('official Mamba-2 needs CUDA')
     torch.set_num_threads(1);torch.manual_seed(17)
-    student=BudgetStudent(PROFILES[profile]).eval()
+    student=BudgetStudent(LEGACY_PROFILES[profile]).eval()
     device='cpu'
     if student.is_ssm:
         if not torch.cuda.is_available():pytest.skip('official Mamba-2 needs CUDA')
@@ -197,7 +197,7 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
             camera_ticks=np.arange(0,n,5),state=truth,imu=imu,dt=np.float32(.005),frame_stride=5,scene_id=scene)
     output=tmp_path/'students'
     env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1')
-    extra=['--profiles','500','10k','1m','100m']
+    extra=['--profiles','1k','10k','100k','1m','100m']
     if streaming:
         from test_streaming_ppo import FAKE_COLLECTOR
         collector=tmp_path/'collect_fake.py';collector.write_text(FAKE_COLLECTOR)
@@ -205,9 +205,9 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
         collection.write_text(json.dumps(dict(NUM_SCENES=2,STREAM_SCENES=1,
             STREAM_EPISODES_PER_SCENE=1,STREAM_VALIDATION_SCENES=1,STREAM_VALIDATION_EPISODES=1,COLLECT_STEPS=21)))
         extra=['--stream-data','--collector',str(collector),'--max-data-mib','3',
-               '--collection-config',str(collection),'--stream-dir',str(tmp_path/'managed'),'--profiles','500']
+               '--collection-config',str(collection),'--stream-dir',str(tmp_path/'managed'),'--profiles','1k']
         if visual_prediction=='embedding':
-            extra=['--stream-data','--collector',str(collector),'--collection-config',str(collection),'--profiles','500']
+            extra=['--stream-data','--collector',str(collector),'--collection-config',str(collection),'--profiles','1k']
     result=subprocess.run([sys.executable,str(HERE/'distill.py'),str(data),'--teacher',str(teacher),
         '--out',str(output),'--epochs','1','--window','11','--device','cpu','--skip-export','--wandb-mode','disabled',*extra],
         env=env,capture_output=True,text=True,timeout=90)
@@ -226,7 +226,7 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
         else:assert not list((tmp_path/'managed').iterdir())
     for name,spec in PROFILES.items():
         if spec.get('kind')=='mamba2':continue
-        if streaming and name!='500':continue
+        if streaming and name!='1k':continue
         directory=output/name
         assert (directory/'student.pt').is_file()
         saved=json.loads((directory/'student.json').read_text())
@@ -234,10 +234,62 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
         model=BudgetStudent(saved)
         model.load_state_dict(torch.load(directory/'student.pt',map_location='cpu',weights_only=True))
         assert all(torch.isfinite(p).all() for p in model.parameters())
-        if name in ('500','10k') and (WORKSPACE/'build/toolchain/wasi-sdk/bin/clang').is_file():
+        if name in ('1k','10k') and (WORKSPACE/'build/toolchain/wasi-sdk/bin/clang').is_file():
             result=subprocess.run([sys.executable,'-m','students.export','--checkpoints',str(directory),
                 '--verify-frames','3'],cwd=HERE,env=env,capture_output=True,text=True,timeout=90)
             assert result.returncode == 0,result.stdout+result.stderr
             assert (directory/'native/student.wasm').read_bytes()[:4]==b'\0asm'
             assert json.loads((directory/'native/limits.json').read_text())['limits']['step_fuel']==spec['fuel']
     assert original=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in teacher.glob('*.pt')}
+    if not streaming and visual_prediction=='embedding':
+        recovered=tmp_path/'recovered'
+        before=hashlib.sha256((output/'1k/student.pt').read_bytes()).hexdigest()
+        result=subprocess.run([sys.executable,str(HERE/'distill.py'),str(data),'--teacher',str(teacher),
+            '--out',str(recovered),'--warm-start',str(output),'--start-epoch','1','--epochs','2',
+            '--window','11','--profiles','1k','--device','cpu','--skip-export','--wandb-mode','disabled'],
+            env=env,capture_output=True,text=True,timeout=90)
+        assert result.returncode==0,result.stdout+result.stderr
+        provenance=json.loads((recovered/'distillation.json').read_text())
+        assert provenance['warm_start']==str(output) and provenance['start_epoch']==1
+        metrics=json.loads((recovered/'1k/metrics.jsonl').read_text())
+        assert metrics['epoch']==2
+        assert json.loads((recovered/'1k/student.json').read_text())==json.loads((output/'1k/student.json').read_text())
+        assert before==hashlib.sha256((output/'1k/student.pt').read_bytes()).hexdigest()
+        stage_run=tmp_path/'stage-recovered';trace=tmp_path/'restored-stage-state.pt'
+        wrapper=tmp_path/'stage-recovery.py'
+        wrapper.write_text(f'''import sys
+from pathlib import Path
+sys.path.insert(0,{str(HERE)!r})
+import torch,distill
+from distillation_checkpoints import cpu_snapshot
+original=distill.train_student
+from distillation_curriculum import DistillationCurriculum
+load_original=DistillationCurriculum.load_state_dict
+def loaded(self,state,**options):
+    result=load_original(self,state,**options)
+    Path({str(tmp_path/'restored-curriculum.json')!r}).write_text(__import__('json').dumps(self.state_dict()))
+    return result
+DistillationCurriculum.load_state_dict=loaded
+def checked(name,row,payload,**options):
+    if not Path({str(trace)!r}).exists():
+        torch.save(cpu_snapshot(dict(model=row['model'].state_dict(),optimizer=row['optimizer'].state_dict(),patience=vars(row['patience']))),{str(trace)!r})
+    return original(name,row,payload,**options)
+distill.train_student=checked
+distill.main()
+''')
+        result=subprocess.run([sys.executable,str(wrapper),str(data),'--teacher',str(teacher),
+            '--out',str(stage_run),'--warm-start',str(output),'--warm-start-stage','--epochs','2',
+            '--window','11','--profiles','1k','--device','cpu','--skip-export','--wandb-mode','disabled'],
+            env=env,capture_output=True,text=True,timeout=90)
+        assert result.returncode==0,result.stdout+result.stderr
+        from test_distillation_checkpoints import equal_state
+        expected=torch.load(output/'1k/stage_best.pt',map_location='cpu',weights_only=True)
+        actual=torch.load(trace,map_location='cpu',weights_only=True)
+        equal_state(actual['model'],expected['model']);equal_state(actual['optimizer'],expected['optimizer'])
+        provenance=json.loads((stage_run/'distillation.json').read_text())
+        assert provenance['warm_start_stage'] and provenance['start_epoch']==1
+        recovered_curriculum=json.loads((tmp_path/'restored-curriculum.json').read_text())
+        original_curriculum=json.loads((output/'curriculum_state.json').read_text())
+        for axis,gates in recovered_curriculum['student_gates'].items():
+            assert gates['1k']==original_curriculum['student_gates'][axis]['1k']
+        assert actual['patience']==json.loads((output/'recovery_state.json').read_text())['students']['1k']['patience']

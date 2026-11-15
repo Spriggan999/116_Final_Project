@@ -167,6 +167,19 @@ def test_ppo_rejects_missing_long_windows_instead_of_shortening_horizon():
         curriculum_data([21,41]).ppo_loader(31,validation=True)
 
 
+def test_memory_batch_override_rebuilds_loader_without_shortening_windows():
+    data=curriculum_data([81]);data.cfg.BATCH=4
+    for length in (11,31):
+        full=data.ppo_loader(length,batch_size=4)
+        smaller=data.ppo_loader(length,batch_size=2)
+        assert smaller is not full and smaller.batch_size==2
+        assert smaller.dataset.length==length
+        assert smaller.dataset.items==full.dataset.items
+        assert data.ppo_loader(length,batch_size=2) is smaller
+    assert data.ppo_loader(11) is data.train_state_loader
+    data.close()
+
+
 def small_batch():
     b,t,h,w = 2,11,24,32
     imu = torch.zeros(b,t,6); imu[:,:,2] = 9.81
@@ -233,11 +246,13 @@ for j in range(int(a.scenes)):
 '''
 
 
-def test_streaming_sl_ppo_and_later_ppo_only(tmp_path):
+@pytest.mark.parametrize('visual_mode',['embedding','rgb'])
+def test_streaming_sl_ppo_and_later_ppo_only(tmp_path,visual_mode):
     collector=tmp_path/'fake_collect.py'; collector.write_text(FAKE_COLLECTOR)
     config=tmp_path/'settings.json'
     config.write_text(json.dumps(dict(H=24,W=32,WINDOW=21,BATCH=1,STUDENT_HIDDEN=16,
         USE_GENERATIVE_FRAME_MODEL=False,USE_LEARNED_VISUAL_ENCODER=False,USE_HYBRID_SSM_TRANSFORMER=False,WANDB_MODE='disabled',
+        VISUAL_PREDICTION=visual_mode,
         NUM_SCENES=2,STREAM_SCENES=1,STREAM_EPISODES_PER_SCENE=1,STREAM_VALIDATION_EPISODES=1,
         COLLECT_STEPS=41,MAX_FRAME_TRAIN_PAIRS=2,MAX_FRAME_VAL_PAIRS=2,
         STREAM_MAX_PASSES_PER_BATCH=1,
@@ -260,6 +275,17 @@ def test_streaming_sl_ppo_and_later_ppo_only(tmp_path):
     rows=[json.loads(line) for line in (checkpoints/'ppo_metrics.jsonl').read_text().splitlines()]
     assert len(rows) == 2 and rows[-1]['best_validation_loss'] <= rows[0]['sl_validation_loss']
     assert rows[0]['window_samples']==11
+    for row in rows:
+        if row['updates']:
+            assert row['objective_total']==pytest.approx(sum(row[key+'_weighted'] for key in ['actor','value','anchor']))
+        assert 'validation_state_velocity_raw' in row
+        assert row['val_unaligned_mte_m']>=0 and row['val_unaligned_ate_rmse_m']>=row['val_unaligned_mte_m']-1e-8
+    components=[json.loads(line) for line in (checkpoints/'loss_components.jsonl').read_text().splitlines()]
+    phase='frame' if visual_mode=='rgb' else 'embedding'
+    assert {row['phase'] for row in components}=={phase,'student'}
+    frame=next(row for row in components if row['phase']==phase)
+    if visual_mode=='rgb':assert frame['train']['flow_x_weight']==0. and 'edge_x_raw' in frame['validation']
+    else:assert 'prediction_weighted' in frame['train']
     assert all(row['validation_window_samples']==31 for row in rows)
     assert all(1 <= row['recording_pass'] <= 3 and row['recording_batch'] for row in rows)
     for name in ['state_student_sl.pt','state_student_ppo.pt','state_student.pt','ppo_training.pt']:

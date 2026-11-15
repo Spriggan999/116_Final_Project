@@ -1,0 +1,45 @@
+{
+  "date": "2026-11-15",
+  "scope": "Shared staged student curriculum may advance one sole unqualified student after peers stay frozen for five completed epochs.",
+  "timeout_epochs": 5,
+  "counting": "Only epochs in which the same full peer group was frozen throughout training and remains qualified at validation count; first freezing epoch excluded. Recording reuse counts for this epoch timeout, not ordinary plateau gates.",
+  "reset_conditions": [
+    "A frozen peer thaws/regresses",
+    "Holdout identity changes",
+    "Active student group changes",
+    "Epochs are nonconsecutive",
+    "Normal or forced stage transition"
+  ],
+  "guards": [
+    "Single-profile runs never force progression",
+    "Two or more holdouts never force progression",
+    "No forced progression after maximum difficulty"
+  ],
+  "checkpoint_behavior": "Timeout state persists with normal/stage recovery for the same group; old checkpoints lacking fields begin at zero. Standard stage-best model, optimizer and EMA restoration remains active.",
+  "logging": [
+    "curriculum/sole_holdout_student",
+    "curriculum/sole_holdout_wait_epochs",
+    "curriculum/sole_holdout_timeout_epochs",
+    "curriculum/forced_promotion",
+    "curriculum/forced_student",
+    "curriculum/sole_holdout_completed_wait_epochs",
+    "curriculum_metrics.jsonl reason sole_holdout_timeout"
+  ],
+  "checks": {
+    "new_holdout_checks": "7 passed",
+    "supervised_regressions_and_cli_recovery": "16 passed",
+    "tracking_lifecycle_checks": "3 passed",
+    "offline_wandb_persistence_host_rerun": "1 passed (sandbox blocks required local socket)",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "limitations": [
+    "Existing Python training processes must restart/recover to load the new rule.",
+    "No long training run started or altered."
+  ],
+  "source_sha256": {
+    "student_curriculum.py": "d859bfc67e407dc4895a0a66c807e09ecfdf9f04868e03fe60a8061ef52da1d8",
+    "distill.py": "cd84f038e3bb36863319ce7b5f988c5a5cd852968836321963eeae2977f17233",
+    "distillation_tracking.py": "3197750f9c32c7a3a2519f39e7788c2b1841bf453586c69b95528072e767518d",
+    "tests/test_sole_holdout.py": "8ddc641659df76af037e3c71bf227547f9773af4eea9c2a02818e3d9c195b05b"
+  }
+}

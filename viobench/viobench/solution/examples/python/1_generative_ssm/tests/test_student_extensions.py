@@ -12,6 +12,7 @@ HERE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(HERE))
 from students.model import BudgetStudent,PROFILES,integrate,integrate_parallel,qmatrix
 from distill import curriculum_window,train_student
+from student_curriculum import DEFAULT_STUDENT_WINDOWS
 from distillation_pipeline import DistillationPipeline
 from evaluate_students import score_portfolio
 from benchmark_students import project_times
@@ -108,11 +109,12 @@ def test_autotune_restores_weights_optimizer_and_rng():
 
 
 def test_curriculum_reaches_twenty_seconds_and_profiles_remain_separate():
-    assert list(PROFILES)==['500','10k','1m','100m','1m_ssm','1m_hybrid','100m_hybrid']
+    assert list(PROFILES)==['1k','10k','100k','1m','100m','1m_ssm','1m_hybrid','100m_hybrid']
     assert (PROFILES['10k']['grid_width'],PROFILES['10k']['grid_height'])==(6,3)
-    windows=[401,801,1601,2401,4001]
-    assert curriculum_window(23,windows,6)==2401
-    assert curriculum_window(24,windows,6)==4001
+    windows=DEFAULT_STUDENT_WINDOWS
+    assert [round((n-1)*.005) for n in windows]==list(range(2,21,2))
+    assert curriculum_window(53,windows,6)==3601
+    assert curriculum_window(54,windows,6)==4001
     assert PROFILES['1m']['hidden']==192 and PROFILES['100m']['hidden']==1792
 
 
@@ -129,6 +131,20 @@ def test_area_uses_website_reference_and_does_not_add_overlapping_gain():
     assert result['claimed_percent']==pytest.approx(result['points'][0]['standalone_gain_percent'])
     assert sum(row['standalone_gain_percent'] for row in result['points'])>result['claimed_percent']
     assert score_portfolio(own,[])['claimed_percent'] is None
+
+
+def test_best_pair_can_differ_from_top_two_individual_models():
+    baseline=json.loads((HERE/'website_baselines.json').read_text())['points']
+    own=[dict(label='cheap',fuel_per_frame_max=150,sim3_ate_rmse_mean=.083),
+         dict(label='middle',fuel_per_frame_max=10_000,sim3_ate_rmse_mean=.059),
+         dict(label='accurate',fuel_per_frame_max=500_000,sim3_ate_rmse_mean=.044)]
+    result=score_portfolio(own,baseline)
+    assert [row['label'] for row in result['ranked_standalone'][:2]]==['cheap','middle']
+    pairs=result['ranked_pairs']
+    assert len(pairs)==3
+    assert pairs[0]['models']==['cheap','accurate']
+    assert pairs[0]['claimed_percent']<result['claimed_percent']
+    assert pairs[0]['claimed_percent']>pairs[1]['claimed_percent']
 
 
 def test_projection_accounts_for_batch_size_validation_and_collection():

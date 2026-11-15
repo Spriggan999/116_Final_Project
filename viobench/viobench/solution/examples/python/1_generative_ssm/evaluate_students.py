@@ -5,6 +5,7 @@ and scoring configuration match the reports. Server comparison JSON is exact.
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from itertools import combinations
 import json
 from math import isfinite,log
 from pathlib import Path
@@ -39,6 +40,11 @@ def score_portfolio(own,baselines,step_fuel=20_000_000_000):
     result.update(claimed_percent=100*max(0,combined-baseline_area)/denominator,
                   fuel_reference=x,error_reference=y,
                   ranked_standalone=sorted(result['points'],key=lambda row:row['standalone_gain_percent'],reverse=True))
+    result['ranked_pairs']=sorted([
+        dict(models=[own[i]['label'],own[j]['label']],
+             claimed_percent=100*max(0,area(base+[points[i],points[j]])-baseline_area)/denominator)
+        for i,j in combinations(range(len(points)),2)
+    ],key=lambda row:row['claimed_percent'],reverse=True)
     return result
 
 
@@ -99,7 +105,13 @@ def main():
         limits=json.loads(args.limits.read_text()) if args.limits else dict(LIMIT_VALUES)
         modules={}
         if args.students:
-            modules.update({name:(args.students/name/'native/student.wasm',spec['fuel']) for name,spec in PROFILES.items()})
+            for name,spec in PROFILES.items():
+                if name=='100k' and not (args.students/name).exists():continue  # older seven-model portfolios
+                if name=='1k' and not (args.students/name).exists() and (args.students/'500').exists():name='500'
+                directory=args.students/name
+                settings=directory/'student.json'
+                cap=json.loads(settings.read_text())['fuel'] if settings.is_file() else spec['fuel']
+                modules[name]=(directory/'native/student.wasm',cap)
         if args.teacher:modules['teacher']=(args.teacher,limits['step_fuel'])
         if not modules:parser.error('provide --students and/or --teacher, or --server-comparison')
         def evaluate(item):
@@ -138,6 +150,11 @@ def main():
         lines.append(f"| {row['label']} | {completed} | {row['fuel_per_frame_max']:,.0f} | {row['sim3_ate_rmse_mean']:.6g} | {row['on_frontier']} | {standalone} | {unique} |")
     lines+=['',f"Combined gain: {result.get('claimed_percent')}%.",
             'Standalone gains overlap and must not be added. Unique gain is the area lost when removing that model.']
+    if result.get('ranked_pairs'):
+        lines+=['','Best two-model portfolios:','',
+                '| Pair | Combined gain (%) |','|---|---:|']
+        for pair in result['ranked_pairs'][:5]:
+            lines.append(f"| {' + '.join(pair['models'])} | {pair['claimed_percent']:.6g} |")
     (args.out/'comparison.md').write_text('\n'.join(lines)+'\n')
     if args.plot and not plot_comparison(result,baseline,args.out/'pareto.png'):
         print('Optional Pareto PNG skipped: install matplotlib to enable plotting.',file=sys.stderr)

@@ -1,0 +1,21 @@
+{
+  "issue": "OptiX module compilation failure; underlying cause unconfirmed",
+  "handling": "One retry in a fresh collector process with exclusive GPU access, cache release and one flight at a time; persistent and unrelated failures propagate",
+  "tests": "27 passed, 3 skipped (CUDA-dependent parity tests); pyflakes and git diff --check passed",
+  "observed_log_signature_classifies_correctly": true,
+  "recovery": {
+    "source": "checkpoints/distill-20261114-214629-357261",
+    "completed_epochs": 15,
+    "next_epoch": 16,
+    "collection_next_index": 14,
+    "all_seven_stage_checkpoints_present": true
+  },
+  "limitation": "Recovery control flow tested with injected compiler failures; actual OptiX compiler failure has not been reproduced or proven resolved",
+  "training_restarted": false,
+  "source_sha256": {
+    "streaming.py": "d92fc6db7c7350c3b94489548d683f3893d144877ebd5b2859c26e28b421f7af",
+    "gpu_collection.py": "c5636867ff9116ace303e0a2cb1862fa0e9378cfac9b845e12124e7e8cbcdf36",
+    "distill.py": "216c44ffc3af71ee41e7f4d1ad951f59b732a3e4e3a391b90d0d254a4e5080b1",
+    "tests/test_gpu_collection.py": "d59017471c646dd135f0ce459ac79af874f2a55492395a784d99012b0033022f"
+  }
+}

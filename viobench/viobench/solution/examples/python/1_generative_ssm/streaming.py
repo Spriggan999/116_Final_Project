@@ -9,6 +9,16 @@ import sys
 import threading
 import time
 import uuid
+from collections import deque
+
+
+class CollectorProcessError(RuntimeError):
+    def __init__(self,code,output):
+        self.output=output
+        lowered=output.lower()
+        self.out_of_memory='out of memory' in lowered or 'cuda_error_out_of_memory' in lowered
+        self.optix_compile_failure='optixmodulecreate' in lowered and 'module compilation failed' in lowered
+        super().__init__(f'Background collector exited with status {code}\n{output}')
 
 
 COLLECTION_SETTINGS=frozenset(('SCENE_CATALOG','NUM_SCENES','SCENE_OFFSET','COLLECT_STEPS','STREAM_SCENES',
@@ -56,21 +66,31 @@ class RollingBatches:
     collect is an optional injectable producer for tests. A successful producer
     must honor its byte limit and return a directory containing rollout NPZs.
     """
-    def __init__(self, root, cfg, collector=None, collect=None):
+    def __init__(self, root, cfg, collector=None, collect=None,gpu_gate=None,initial_index=0):
         self.root = Path(root)
         self.cfg = cfg
         self.collector = Path(collector or Path(__file__).with_name('collect.py')).resolve()
         self.producer = collect or self._subprocess
         self.stop = threading.Event()
+        self.gpu_gate=gpu_gate
+        if gpu_gate is not None:gpu_gate.stop=self.stop
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='rollout-producer')
         self.future = None
         self.current = None
         self.counter = 0
+        if type(initial_index) is not int or initial_index<0:
+            self.pool.shutdown()
+            raise ValueError('Initial collection index must be nonnegative')
+        self.initial_index=initial_index
         self.passes_on_current = 0
         self.max_passes = getattr(cfg, 'STREAM_MAX_PASSES_PER_BATCH', 3)
         # Old checkpoints and injected test collectors retain the former split.
         self.validation_scenes = getattr(cfg, 'STREAM_VALIDATION_SCENES', 1)
         self.last_wait_seconds=0.
+        self.oom_retries=0
+        self.oom_recoveries=0
+        self.optix_compile_retries=0
+        self.optix_compile_recoveries=0
         compression=getattr(cfg,'COLLECT_COMPRESSION_LEVEL',6)
         if type(compression) is not int or not 0<=compression<=9:
             self.pool.shutdown()
@@ -103,8 +123,8 @@ class RollingBatches:
         (self.owned / '.owned-by-training').write_text('rolling training data\n')
         try:
             self.validation = self._generate('validation', -1)
-            self.current = self._generate('batch-000000', 0)
-            self.counter = 1
+            self.current = self._generate(f'batch-{self.initial_index:06d}', self.initial_index)
+            self.counter = self.initial_index+1
             self._prefetch()
             return self
         except BaseException:
@@ -133,7 +153,27 @@ class RollingBatches:
                     compression_level=getattr(self.cfg,'COLLECT_COMPRESSION_LEVEL',6),
                     steps=self.cfg.COLLECT_STEPS, width=self.cfg.SOURCE_WIDTH,
                     height=self.cfg.SOURCE_HEIGHT, max_bytes=self.slot_bytes-64*1024)
-        self.producer(directory, spec, self.stop)
+        try:
+            self.producer(directory, spec, self.stop)
+        except CollectorProcessError as error:
+            if not (error.out_of_memory or error.optix_compile_failure) or self.gpu_gate is None or self.stop.is_set():raise
+            if error.out_of_memory:
+                kind='GPU OOM';counter='oom'
+            else:
+                # This signature does not establish an OOM. Try a fresh native
+                # context with less GPU pressure once; persistent errors fail.
+                kind='OptiX module compilation failure';counter='optix_compile'
+            setattr(self,counter+'_retries',getattr(self,counter+'_retries')+1)
+            print(f'Collector {kind} in {name}; pausing training GPU work, releasing unused cache, '
+                  'and retrying this batch once with one flight at a time.',flush=True)
+            # This is the owned, not-yet-published slot; no training loader can
+            # be reading its partial files. Keep current/validation untouched.
+            shutil.rmtree(directory);directory.mkdir()
+            spec=dict(spec,instances=1)
+            with self.gpu_gate.exclusive(self.stop):
+                self.producer(directory,spec,self.stop)
+            setattr(self,counter+'_recoveries',getattr(self,counter+'_recoveries')+1)
+            print(f'Collector {kind} recovery completed for {name}; parallel training resumes.',flush=True)
         if self.stop.is_set():
             raise RuntimeError('Collection cancelled')
         if not list(directory.glob('rollout_s*_e*.npz')):
@@ -162,7 +202,20 @@ class RollingBatches:
             command.extend(['--scene-catalog',spec.get('scene_catalog','mixed')])
             command.extend(['--compression-level',str(spec.get('compression_level',6))])
         # Stream output instead of accumulating an unbounded subprocess log.
-        child = subprocess.Popen(command, start_new_session=os.name == 'posix')
+        child = subprocess.Popen(command, start_new_session=os.name == 'posix',
+                                 stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',bufsize=1)
+        tail=deque(maxlen=80)
+        diagnostics={}
+        def forward_output():
+            for line in child.stdout:
+                print(line,end='',flush=True)
+                tail.append(line[-4096:])
+                # Native compilers can print many informational lines after
+                # the actual failure. Retain each signature outside the tail.
+                for marker in ('out of memory','cuda_error_out_of_memory','optixmodulecreate','module compilation failed'):
+                    if marker in line.lower():diagnostics[marker]=line[-4096:]
+        reader=threading.Thread(target=forward_output,name='collector-output',daemon=True)
+        reader.start()
         started = time.monotonic()
         try:
             while child.poll() is None:
@@ -171,7 +224,11 @@ class RollingBatches:
                 if time.monotonic()-started > self.cfg.STREAM_COLLECT_TIMEOUT:
                     raise TimeoutError('Background collector exceeded STREAM_COLLECT_TIMEOUT')
             if child.returncode:
-                raise RuntimeError(f'Background collector exited with status {child.returncode}')
+                reader.join(timeout=5)
+                retained=list(tail)
+                diagnostic_lines=list(dict.fromkeys(diagnostics.values()))
+                output=''.join(line for line in diagnostic_lines if line not in retained)+''.join(retained)
+                raise CollectorProcessError(child.returncode,output)
         finally:
             if child.poll() is None:
                 if os.name == 'posix':
@@ -192,6 +249,8 @@ class RollingBatches:
                     else:
                         child.kill()
                     child.wait()
+            reader.join(timeout=5)
+            if not reader.is_alive():child.stdout.close()
 
     def _prefetch(self):
         index = self.counter
@@ -257,7 +316,9 @@ class TrainingData:
                 print('Rolling mode: synthetic-window disk caches disabled.', flush=True)
             cfg.CACHE_GENERATED_WINDOWS = False
             root = args.stream_dir or args.out/'stream-data'
-            self.rolling = stack.enter_context(RollingBatches(root, cfg, args.collector))
+            self.rolling = stack.enter_context(RollingBatches(root, cfg, args.collector,
+                                               gpu_gate=getattr(args,'gpu_collection_gate',None),
+                                               initial_index=getattr(args,'resume_collection_index',0)))
             self.loaded_path = self.rolling.current
             train_files = sorted(self.rolling.current.glob('rollout_s*_e*.npz'))
             val_files = sorted(self.rolling.validation.glob('rollout_s*_e*.npz'))
@@ -542,16 +603,18 @@ class TrainingData:
             print(f'Early-stopping patience reset; adapting for {grace} fresh data cycles.',flush=True)
         return reset_patience
 
-    def ppo_loader(self, length, validation=False):
+    def ppo_loader(self, length, validation=False, batch_size=None):
         """Separate PPO windows leave SL and fixed validation datasets intact."""
         from data import StateWindows
         from torch.utils.data import DataLoader
         from curriculum import state_batch_size
-        if length == self.cfg.WINDOW:
+        if length == self.cfg.WINDOW and batch_size is None:
             return self.val_state_loader if validation else self.train_state_loader
         name = 'ppo_val_loader' if validation else 'ppo_state_loader'
         loader = getattr(self, name, None)
-        if loader is None or loader.dataset.length != length:
+        count=state_batch_size(self.cfg,length)
+        if batch_size is not None:count=min(count,batch_size)
+        if loader is None or loader.dataset.length != length or loader.batch_size != count:
             self._close_loader(loader)
             store = self.val_data if validation else self.train_data
             try:
@@ -567,7 +630,7 @@ class TrainingData:
                 if missing:
                     raise ValueError(f'PPO validation recordings lack {length}-sample windows: {missing}; '
                                      'recollect longer collision-free validation flights or shorten the curriculum')
-            loader = DataLoader(windows, batch_size=state_batch_size(self.cfg,length), shuffle=not validation, **self.loader_options)
+            loader = DataLoader(windows, batch_size=count, shuffle=not validation, **self.loader_options)
             setattr(self, name, loader)
         return loader
 

@@ -57,3 +57,37 @@ def test_ppo_validation_weights_partial_batch_and_reuses_predictions(monkeypatch
 def test_ppo_validation_rejects_empty_loader_with_metrics():
     with pytest.raises(ValueError,match='No PPO validation windows'):
         validation_loss(None,PositionStudent(),[],'cpu',return_metrics=True)
+
+
+def test_unaligned_mte_is_mean_distance_and_distinct_from_rmse():
+    from leaderboard_metrics import LeaderboardATE
+    batch=trajectory_batch([0.]);pred=PositionStudent()(batch['pos'],batch['imu'],None,None,None)
+    pred['pos'][0,:,0]=torch.tensor([0.,3.,9.])
+    metric=LeaderboardATE();metric.update(pred,batch);result=metric.result()
+    assert result['unaligned_mte_m']==pytest.approx(4.)
+    assert result['unaligned_ate_rmse_m']==pytest.approx(30**.5)
+    assert result['mean_ate_m']==0.
+
+
+def test_unaligned_mte_uses_camera_samples_and_equal_episode_weighting():
+    from leaderboard_metrics import LeaderboardATE
+    metric=LeaderboardATE()
+    first=trajectory_batch([3.]);first['episode_id']=['one']
+    first['observed'][0,1]=False
+    pred=PositionStudent()(first['pos'],first['imu'],None,None,None)
+    pred['pos'][0,1,0]=1000.
+    metric.update(pred,first);metric.update(pred,first)
+    second=trajectory_batch([9.]);second['episode_id']=['two']
+    metric.update(PositionStudent()(second['pos'],second['imu'],None,None,None),second)
+    assert metric.result()['unaligned_mte_m']==6.
+    assert metric.result()['unaligned_ate_rmse_m']==6.
+
+
+def test_unaligned_mte_includes_camera_lever_arm_and_invalid_state_filling():
+    from leaderboard_metrics import LeaderboardATE
+    batch=trajectory_batch([0.]);batch['camera_position_in_body']=torch.tensor([[1.,0.,0.]])
+    pred=PositionStudent()(batch['pos'],batch['imu'],None,None,None)
+    pred['rot']=pred['rot'].clone();pred['rot'][0,1]=torch.diag(torch.tensor([-1.,-1.,1.]))
+    pred['pos'][0,2]=float('nan')
+    metric=LeaderboardATE();metric.update(pred,batch)
+    assert metric.result()['unaligned_mte_m']==pytest.approx(2/3)

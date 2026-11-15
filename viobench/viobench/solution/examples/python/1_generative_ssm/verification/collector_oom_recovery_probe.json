@@ -1,0 +1,24 @@
+{
+  "scene_index": 32,
+  "cache_before_mib": 12288.0,
+  "cache_after_mib": 0.0,
+  "instances": 1,
+  "episodes": 2,
+  "success": true,
+  "collection": {
+    "episodes": 2,
+    "captures": 52,
+    "seconds": 22.78835865300789,
+    "captures_per_second": 2.281866842267571,
+    "instances": 1,
+    "build_seconds": 20.370092109005782,
+    "rollout_seconds": 1.898863343987614,
+    "compression_level": 1,
+    "recording_bytes": 17370950,
+    "repaired_empty_primitives": 0,
+    "compression_seconds": 0.3193012580013601,
+    "write_seconds": 0.0039279600023292005,
+    "simulated_captures": 52,
+    "rollout_captures_per_second": 27.3848037377982
+  }
+}

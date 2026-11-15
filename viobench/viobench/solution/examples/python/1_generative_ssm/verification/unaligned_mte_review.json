@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-15",
+  "metric": "unaligned_mte_m",
+  "definition": "Equal-episode mean of mean camera-timestamp Euclidean camera-position errors in metres; no fitted alignment.",
+  "companion_metric": "unaligned_ate_rmse_m: equal-episode mean of official unaligned position RMSE",
+  "semantics": [
+    "Complete validation episodes, including initial camera timestamp.",
+    "Camera/IMU lever arm included.",
+    "Invalid estimates use official origin/identity fallback.",
+    "Existing validation predictions reused; no added neural inference.",
+    "Sim(3) selection/curriculum/stopping criteria unchanged."
+  ],
+  "logging": [
+    "PROFILE/validation_unaligned_mte_m and PROFILE/metrics.jsonl",
+    "student/val_unaligned_mte_m; optional teacher/val_ and distill/val_ variants",
+    "ppo/val_unaligned_mte_m and ppo_metrics.jsonl"
+  ],
+  "checks": {
+    "trajectory_metrics_and_student_cli_recovery": "18 passed, 16 deselected",
+    "streaming_embedding_sl_ppo_and_later_ppo_only": "1 passed",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "source_sha256": {
+    "leaderboard_metrics.py": "0966c8b6e3fb0f01585349baf5e95dfb5c91de1af0135349a9601730b143b586",
+    "distill.py": "00d062dd2965f328b61e4902f3846d609857802af2d1df79f27384700b6aa9c3",
+    "ppo.py": "bc337875d7ac6c447571e77a2dbdd4624640196ad5ecdf4915385ee0e9ef696d",
+    "tests/test_tracking_metrics.py": "7a2088c5f60cb569acd641e064f1d3243a683f9086462b70730087a456a71757",
+    "tests/test_student_supervised.py": "da70cc9291dc5230e2f67022b71a0644d70a1e7e5279193e43ca245cc74058e9",
+    "tests/test_streaming_ppo.py": "15e5ef003c92bd2c6f62196e43ae8cd5406bf229c774981bb3e328fe8648995f"
+  }
+}

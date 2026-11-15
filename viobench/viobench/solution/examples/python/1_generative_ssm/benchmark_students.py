@@ -1,4 +1,4 @@
-"""Bounded seven-student pilot with a real frozen teacher and recorded sensors.
+"""Bounded budget-student pilot with a real frozen teacher and recorded sensors.
 
 Timings are measurements; convergence times remain conditional projections.
 No W&B run, full training run, simulator launch, or website upload is started.
@@ -16,6 +16,7 @@ import torch
 
 HERE=Path(__file__).resolve().parent
 sys.path.insert(0,str(HERE))
+from student_curriculum import DEFAULT_STUDENT_WINDOWS
 
 
 def project_times(stages,validation_seconds,training_recordings,validation_recordings,collection_seconds=0,*,overlap=False,max_passes=3):
@@ -48,7 +49,7 @@ def main():
     parser.add_argument('--recording',type=Path,required=True)
     parser.add_argument('--validation-recording',type=Path)
     parser.add_argument('--out',type=Path,required=True)
-    parser.add_argument('--windows',type=int,nargs='+',default=[401,801,1601,2401,4001])
+    parser.add_argument('--windows',type=int,nargs='+',default=list(DEFAULT_STUDENT_WINDOWS))
     parser.add_argument('--batch',type=int,default=8)
     parser.add_argument('--steps',type=int,default=3)
     parser.add_argument('--max-seconds',type=float,default=1200)
@@ -208,7 +209,7 @@ def main():
         lines.append(f"| {name} | {result['resources'][name]['fuel_step_max']:,} | {times['100']/3600:.2f} | {times['300']/3600:.2f} | {times['500']/3600:.2f} |")
     if result['portfolio_projection_seconds']:
         times=result['portfolio_projection_seconds']
-        lines+=['',f"Shared-teacher portfolio: {times['100']/3600:.2f} / {times['300']/3600:.2f} / {times['500']/3600:.2f} hours for 100 / 300 / 500 epochs with all seven active.",
+        lines+=['',f"Shared-teacher portfolio: {times['100']/3600:.2f} / {times['300']/3600:.2f} / {times['500']/3600:.2f} hours for 100 / 300 / 500 epochs with all selected models active.",
                 f"Earliest stale-stop scenario after the curriculum: {times['earliest_stale_stop_seconds']/3600:.2f}–{times['earliest_stale_stop_with_3_pass_reuse_seconds']/3600:.2f} h, assuming no further qualifying improvements."]
     else:lines+=['','Pilot budget ended before every horizon; full-run projections are unavailable.']
     if 'streaming_projection_seconds' in result:

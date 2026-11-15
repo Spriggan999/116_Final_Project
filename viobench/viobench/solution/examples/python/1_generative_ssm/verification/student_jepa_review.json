@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-15",
+  "scope": "Default JEPA-style auxiliary embedding loss for fresh supervised and distilled learned-front-end students.",
+  "defaults": {
+    "embedding_weight": 0.1,
+    "ema_decay": 0.99,
+    "smooth_l1_beta": 0.1,
+    "std_target": 0.1,
+    "variance_weight": 1.0,
+    "covariance_weight": 0.01
+  },
+  "target": "Stop-gradient EMA online-encoder copy stored as persistent buffers; first capture excluded from prediction/content targets.",
+  "checkpoint_behavior": "EMA survives scheduling rollback and stage/ordinary recovery; old checkpoints initialize missing targets from saved online encoder.",
+  "deployment": "EMA buffers excluded from generated weights and offsets. Unit check proves identical native header and ordered weight bytes with/without EMA for the same online state.",
+  "validation": "State validation/probes and complete-trajectory Sim(3) ATE retain selection/gating roles; embedding diagnostics additionally logged.",
+  "checks": {
+    "cpu_embedding_and_supervised": "19 passed, 2 CUDA tests deselected",
+    "cuda_all_eight_profiles_and_scheduling_rollback": "2 passed, 3 deselected",
+    "checkpoint_and_tiny_native_wasm_regressions": "12 passed, 24 deselected",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "limitations": [
+    "Bounded correctness tests, no trained accuracy or convergence claim.",
+    "No long training run launched."
+  ],
+  "source_sha256": {
+    "student_embedding.py": "6a619dfd1125017f3593c0bf871d47a47f56c904a3657b8aadc99a81bde11866",
+    "students/model.py": "7949649611d854e8238ac3240cf39454c7f1916ebee1ea6eedd78159bb28a413",
+    "students/export.py": "455ad959447006fed75547be73f9218c0091cc9e87893fcb8932543e64c669e1",
+    "distill.py": "7f426c32a58cad590bcbb993dcf5362622648d794daaea7618e3fef02fd7e5fc",
+    "tests/test_student_embedding.py": "835d70a784fa4f570454c79545692292da1e0c2eddc83631a1caeed1a954813f",
+    "tests/test_student_supervised.py": "057622e556fef5d278463c5c82990f519a1befe6941a1471858eff7e50720817",
+    "LOSSES_README.md": "ba72b442235170760fea2d2158c067876c43917970ac1139b29f924e4b176707"
+  }
+}

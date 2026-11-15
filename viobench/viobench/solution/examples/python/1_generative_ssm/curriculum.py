@@ -68,6 +68,7 @@ class DifficultyCurriculum:
                 or any(b <= a for a, b in zip(self.levels, self.levels[1:]))):
             raise ValueError('CURRICULUM_LEVELS must increase from 0 to 1')
         self.mix = list(cfg.CURRICULUM_MIX)
+        self.all_easier=getattr(cfg,'CURRICULUM_ALL_EASIER',False)
         if (len(self.mix) != 3 or any(not math.isfinite(n) or n < 0 for n in self.mix)
                 or abs(sum(self.mix)-1) > 1e-6):
             raise ValueError('CURRICULUM_MIX must contain current/easier/harder probabilities summing to 1')
@@ -99,8 +100,10 @@ def state_batch_size(cfg,length):
     return min(cfg.BATCH,max(1,budget//length)) if budget else cfg.BATCH
 
 
-def mixed_level(stage, levels, mix, generator):
+def mixed_level(stage, levels, mix, generator, all_easier=False):
     choice = int(torch.multinomial(torch.tensor(mix), 1, generator=generator))
+    if choice==1 and all_easier and stage>0:
+        return levels[int(torch.randint(stage,(1,),generator=generator))]
     index = (stage, max(0, stage-1), min(len(levels)-1, stage+1))[choice]
     return levels[index]
 
@@ -112,6 +115,13 @@ def noisy_imu(imu, dt, strength, cfg, generator):
     white = imu.new_tensor([cfg.CURRICULUM_ACCEL_NOISE]*3 + [cfg.CURRICULUM_GYRO_NOISE]*3)
     bias = imu.new_tensor([cfg.CURRICULUM_ACCEL_BIAS]*3 + [cfg.CURRICULUM_GYRO_BIAS]*3)
     walk = imu.new_tensor([cfg.CURRICULUM_ACCEL_WALK]*3 + [cfg.CURRICULUM_GYRO_WALK]*3)
+    if getattr(cfg,'CURRICULUM_RANDOM_ERROR_STRENGTH',False):
+        # Per-flight, per-channel amplitude draws. Overlapping windows retain
+        # identical sensor errors; the normal innovations remain random too.
+        amplitudes=.5+.5*torch.rand((3,6),generator=generator)
+        white=white*amplitudes[0].to(imu.device)
+        bias=bias*amplitudes[1].to(imu.device)
+        walk=walk*amplitudes[2].to(imu.device)
     offset = (2*torch.rand(6, generator=generator)-1)*bias
     drift = torch.randn(imu.shape, generator=generator).cumsum(0)*walk*math.sqrt(dt)
     result = imu + strength*(offset + drift + torch.randn(imu.shape, generator=generator)*white)
@@ -124,7 +134,10 @@ def photometric_parameters(strength,cfg,generator):
     if strength==0:return (1.,1.,0.)
     brightness=1+strength*cfg.CURRICULUM_BRIGHTNESS*(2*float(torch.rand((),generator=generator))-1)
     contrast=1+strength*cfg.CURRICULUM_CONTRAST*(2*float(torch.rand((),generator=generator))-1)
-    return brightness,contrast,strength*cfg.CURRICULUM_BLUR
+    blur=strength*cfg.CURRICULUM_BLUR
+    if getattr(cfg,'CURRICULUM_RANDOM_ERROR_STRENGTH',False):
+        blur*=float(torch.rand((),generator=generator))
+    return brightness,contrast,blur
 
 
 def difficult_images(images, strength, cfg, generator):
@@ -144,6 +157,31 @@ def difficult_images(images, strength, cfg, generator):
     return output
 
 
+@torch.no_grad()
+def photometric_captures(images,parameters,chunk=16):
+    """Apply per-flight appearance parameters in bounded device-side chunks."""
+    host_parameters=parameters.device.type=='cpu'
+    if host_parameters and torch.equal(parameters,parameters.new_tensor([1.,1.,0.]).expand_as(parameters)):
+        return images
+    byte=images.dtype==torch.uint8
+    result=torch.empty_like(images)
+    for index in range(len(images)):
+        brightness,contrast,blur=(parameters[index].tolist() if host_parameters
+                                  else parameters[index].to(images.device).unbind())
+        if host_parameters and (brightness,contrast,blur)==(1.,1.,0.):
+            result[index].copy_(images[index])
+            continue
+        for start in range(0,images.shape[1],chunk):
+            source=images[index,start:start+chunk]
+            x=source.float()/(255. if byte else 1.)
+            x=((x-.5)*contrast+.5)*brightness
+            if not host_parameters or blur:
+                x=(1-blur)*x+blur*F.avg_pool2d(x,3,stride=1,padding=1,count_include_pad=False)
+            x=x.clamp(0,1)
+            result[index,start:start+chunk]=(x*255).round().to(torch.uint8) if byte else x
+    return result
+
+
 class AugmentedDataset(Dataset):
     """Epoch-local view. Workers own cached noisy IMU; base stores stay immutable."""
     def __init__(self, base, cfg, schedule, seed, probe=None):
@@ -154,6 +192,7 @@ class AugmentedDataset(Dataset):
         self.items, self.store = base.items, base.store
         self.length = getattr(base, 'length', None)
         self.levels, self.mix = schedule.levels, schedule.mix
+        self.all_easier=getattr(schedule,'all_easier',False)
         self.stages = dict(schedule.stages)
         self.imu_cache = {}
 
@@ -164,7 +203,7 @@ class AugmentedDataset(Dataset):
         if self.probe is not None:
             return float(self.probe == axis)
         generator = torch.Generator().manual_seed(seed_for(self.seed, flight_identity(entry), axis))
-        return mixed_level(self.stages[axis], self.levels, self.mix, generator)
+        return mixed_level(self.stages[axis], self.levels, self.mix, generator,self.all_easier)
 
     def flight_imu(self, eidx):
         if eidx not in self.imu_cache:
@@ -195,7 +234,10 @@ class AugmentedDataset(Dataset):
             start = item[1]
             if 'frames_cached' in result:
                 raise ValueError('Curriculum augmentation requires uncached camera/IMU inputs')
-            result['cam_images'] = difficult_images(result['cam_images'], strength, self.cfg, generator)
+            if getattr(self.cfg,'CURRICULUM_STATE_DEVICE_PHOTOMETRIC',False):
+                result['photometric']=torch.tensor(photometric_parameters(strength,self.cfg,generator))
+            else:
+                result['cam_images'] = difficult_images(result['cam_images'], strength, self.cfg, generator)
             result['imu'] = self.flight_imu(item[0])[start:start+self.length]
             gravity = -result['imu'][1:min(self.length, 11), :3].mean(0).clamp(-20, 20)
             result['gravity'] = 9.81*gravity/torch.linalg.vector_norm(gravity).clamp_min(1e-5)
@@ -255,10 +297,19 @@ def curriculum_sampler(dataset, schedule, progress, seed):
     stage = schedule.stages['motion']
     weights = torch.zeros(len(dataset), dtype=torch.float64)
     available = sorted(set(bins.tolist()))
-    for probability, desired in zip(schedule.mix, (stage, max(0, stage-1), min(len(schedule.levels)-1, stage+1))):
-        selected = min(available, key=lambda n: abs(n-desired))
-        mask = bins == selected
-        weights[mask] += probability/int(mask.sum())
+    if getattr(schedule,'all_easier',False):
+        current=max((n for n in available if n<=stage),default=min(available))
+        easier=[n for n in available if n<stage]
+        allocations=[(current,schedule.mix[0] if easier else 1.)]
+        if easier:allocations.extend((n,schedule.mix[1]/len(easier)) for n in easier)
+        for selected,probability in allocations:
+            mask=bins==selected
+            weights[mask]+=probability/int(mask.sum())
+    else:
+        for probability, desired in zip(schedule.mix, (stage, max(0, stage-1), min(len(schedule.levels)-1, stage+1))):
+            selected = min(available, key=lambda n: abs(n-desired))
+            mask = bins == selected
+            weights[mask] += probability/int(mask.sum())
     if progress is not None:
         for index, item in enumerate(dataset.items):
             weights[index] *= progress.priority(sample_key(dataset,item))

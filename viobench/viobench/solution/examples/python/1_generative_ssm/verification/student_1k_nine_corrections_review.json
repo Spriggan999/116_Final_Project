@@ -1,0 +1,73 @@
+{
+  "date": "2026-11-15",
+  "profile": "1k",
+  "parameters": 169,
+  "export_fuel_cap": 6000,
+  "architecture": {
+    "encoder": "4x4 grayscale grid; shared two-filter 2x2 stride-2 CNN; 2D embedding",
+    "embedding_predictor": [
+      14,
+      2,
+      2
+    ],
+    "state_head": [
+      12,
+      9
+    ],
+    "correction_order": [
+      "gyro x/y/z",
+      "body-frame acceleration x/y/z",
+      "initial-frame acceleration x/y/z"
+    ],
+    "correction_bound": "0.25*tanh(head(features))",
+    "integration": "Same generic equations as larger students; 20 Hz packet-mean IMU; parallel CUDA quaternion prefixes",
+    "native_kernel": "students/native.c"
+  },
+  "resource_check": {
+    "module": "/tmp/hyperdrone-1k-nine-corrections-7zf989fm/final/student.wasm",
+    "module_sha256": "bd696750cc0c545ce25276a699751a268dac7bf7534894555ad8285a983ac807",
+    "bytes": 26313,
+    "frames_requested": 1200,
+    "frames_completed": 1200,
+    "simulated_duration_seconds": 60.0,
+    "limits": {
+      "init_fuel": 200000000000,
+      "step_fuel": 6000,
+      "memory_bytes": 2147483648,
+      "table_elements": 1048576,
+      "init_wall_seconds": 300.0,
+      "step_wall_seconds": 60.0
+    },
+    "max_upload_bytes": 134217728,
+    "episode_timeout_seconds": 1440,
+    "passed": true,
+    "fuel_step_max": 5195,
+    "wall_step_seconds_max": 0.00014039399684406817,
+    "memory_bytes_observed_max": 67108864,
+    "width": 320,
+    "height": 240,
+    "fuel_init": 16636,
+    "wall_init_seconds_reported": 0.00027114900876767933,
+    "elapsed_seconds": 1.5182607229799032,
+    "profile_kind": "student resource check; not an accuracy evaluation",
+    "weights_sha256": "a0984ef9c20136522d7bb3a193fff68f5ea129810f91f31410890044c32f560c"
+  },
+  "checks": {
+    "focused_cpu_native_wasm_correction_semantics_learning_legacy_and_cli": "13 passed, 1 CUDA test skipped, 34 deselected",
+    "cuda_20_second_parallel_vs_sequential_with_gradients": "1 passed, 30 deselected",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "compatibility": "Saved six-output and fixed-attitude 1K checkpoints keep original architectures/kernels. New nine-correction defaults need fresh training.",
+  "limitations": [
+    "No trained accuracy evaluation.",
+    "No long training run launched.",
+    "Profile name retained as 1k; actual resource use exceeds 1000 fuel/frame."
+  ],
+  "source_sha256": {
+    "students/model.py": "c3e82b96fc7c87d7d7e55dad41c50200b7019fcbb4d328566ed23bd1370005bb",
+    "students/export.py": "6b437e133ab4858ee747673daa7d8ebb4cc15ec5db45eb6ccaaf3aa4630e8638",
+    "students/native.c": "2f730d13d581a51d08e6029aed75ba774609514fd731fc1ff1ac098f94a6508c",
+    "students/native_vision.h": "09e87255d2cf5583361f2da91306a79fe32cd8c0798ee41158aa7af23404f4c9",
+    "tests/test_student_frontends.py": "c88636af140c9eda1462a70698c85a6e729a1db3ebbf326ef51bb669ac649fae"
+  }
+}

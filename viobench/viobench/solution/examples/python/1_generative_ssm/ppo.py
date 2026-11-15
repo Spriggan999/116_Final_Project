@@ -194,6 +194,8 @@ def ppo_update(student, critic, reference_head, optimizer, rollout, cfg):
     adv = rollout['advantages']
     adv = (adv-adv.mean()) / adv.std(unbiased=False).clamp_min(1e-8)
     n = len(adv)
+    from loss_tracking import LossAverages,weighted_terms
+    parts=LossAverages()
     last_kl, updates = 0., 0
     for _ in range(cfg.PPO_UPDATE_EPOCHS):
         order = torch.randperm(n, device=adv.device)
@@ -206,7 +208,7 @@ def ppo_update(student, critic, reference_head, optimizer, rollout, cfg):
             ratio = log_ratio.clamp(-20,20).exp()
             last_kl = float(((ratio-1)-log_ratio).mean().detach())
             if last_kl > cfg.PPO_TARGET_KL:
-                return dict(approx_kl=last_kl, updates=updates)
+                return dict(approx_kl=last_kl, updates=updates,**parts.result())
             unclipped = ratio*adv[idx]
             clipped = ratio.clamp(1-cfg.PPO_CLIP,1+cfg.PPO_CLIP)*adv[idx]
             actor_loss = -torch.minimum(unclipped,clipped).mean()
@@ -216,6 +218,15 @@ def ppo_update(student, critic, reference_head, optimizer, rollout, cfg):
                 reference = reference_head(rollout['tokens'][idx])
             anchor = .5*((means-reference)/cfg.PPO_STD).square().sum(-1).mean()
             objective = actor_loss+value_loss+cfg.PPO_ANCHOR_COEF*anchor
+            raw=weighted_terms(dict(actor=actor_loss,value=value_loss,anchor=anchor),
+                               dict(actor=1.,value=1.,anchor=cfg.PPO_ANCHOR_COEF))
+            raw.update(weighted_terms(dict(value_mse=2*value_loss,reference_divergence=2*anchor),
+                                      dict(value_mse=.5,reference_divergence=.5*cfg.PPO_ANCHOR_COEF),prefix='detail_'))
+            raw.update(objective_total=objective.detach(),
+                       surrogate_unclipped_raw=-unclipped.detach().mean(),
+                       surrogate_clipped_raw=-clipped.detach().mean(),
+                       clip_fraction=((ratio.detach()-1).abs()>cfg.PPO_CLIP).float().mean())
+            parts.update(raw,len(idx))
             if not torch.isfinite(objective):
                 raise ValueError('Nonfinite PPO objective')
             optimizer.zero_grad(set_to_none=True)
@@ -223,12 +234,14 @@ def ppo_update(student, critic, reference_head, optimizer, rollout, cfg):
             nn.utils.clip_grad_norm_(list(student.out.parameters())+list(critic.parameters()), .5)
             optimizer.step()
             updates += 1
-    return dict(approx_kl=last_kl, updates=updates)
+    return dict(approx_kl=last_kl, updates=updates,**parts.result())
 
 
 def validation_loss(frame_model, student, loader, device, *, return_metrics=False,episode_loader=None):
     total, count = 0., 0
     if return_metrics:
+        from loss_tracking import LossAverages
+        component_averages=LossAverages()
         from leaderboard_metrics import LeaderboardATE,finish_ate
         ate=LeaderboardATE()
     student.eval()
@@ -237,7 +250,8 @@ def validation_loss(frame_model, student, loader, device, *, return_metrics=Fals
             frames = state_input_frames(frame_model,batch,device)
             prediction = student(frames,batch['imu'].to(device,non_blocking=True),batch['observed'].to(device,non_blocking=True),
                                  batch['dt'].to(device,non_blocking=True),batch['gravity'].to(device,non_blocking=True))
-            value,_ = losses(prediction,batch,device,metrics=False)
+            value,parts = losses(prediction,batch,device,metrics=False,components=return_metrics)
+            if return_metrics:component_averages.update(parts,len(frames))
             n = len(frames)
             if return_metrics:
                 ate.update(prediction,batch)
@@ -249,7 +263,7 @@ def validation_loss(frame_model, student, loader, device, *, return_metrics=Fals
     if not math.isfinite(result):
         raise ValueError('Nonfinite PPO validation loss')
     if return_metrics:
-        return result,finish_ate(frame_model,student,device,ate,episode_loader)
+        return result,finish_ate(frame_model,student,device,ate,episode_loader)|{'state_'+key:value for key,value in component_averages.result().items()}
     return result
 
 
@@ -372,6 +386,8 @@ def _refine_ppo(frame_model, student, data, cfg, output, save_weights, tracker):
                               progress_validation_loss=progress_score))
         record = dict(iteration=iteration+1,mean_reward=reward,validation_loss=score,
                       val_mean_ate_m=validation_metrics['mean_ate_m'],
+                      val_unaligned_mte_m=validation_metrics['unaligned_mte_m'],
+                      val_unaligned_ate_rmse_m=validation_metrics['unaligned_ate_rmse_m'],
                       val_sim3_ate_rmse_mean=validation_metrics['sim3_ate_rmse_mean'],
                       val_ate_episodes=validation_metrics['ate_episodes'],
                       val_ate_camera_calibrated_episodes=validation_metrics['ate_camera_calibrated_episodes'],
@@ -385,6 +401,7 @@ def _refine_ppo(frame_model, student, data, cfg, output, save_weights, tracker):
                       recording_batch=data.batch_id,
                       recording_pass=data.rolling.passes_on_current if data.rolling else 1,
                       **diagnostics)
+        record.update({'validation_'+key:value for key,value in validation_metrics.items() if key.startswith('state_')})
         with (output/'ppo_metrics.jsonl').open('a') as stream:
             stream.write(json.dumps(record)+'\n')
         tracker.log({'ppo/'+key:value for key,value in record.items()

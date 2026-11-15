@@ -8,7 +8,7 @@ import torch
 
 HERE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(HERE))
-from students.model import BudgetStudent,PROFILES
+from students.model import BudgetStudent,LEGACY_PROFILES as PROFILES
 from students.export import export_student
 from viobench import Sandbox,Limits
 from viobench.tools.abi.config import default_guest_config

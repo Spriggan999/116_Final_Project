@@ -3,6 +3,13 @@
 Use SSH to control the lab computer from your personal computer, and `tmux`
 to keep training running when your SSH connection closes.
 
+For fresh supervised student training, activate the CUDA environment, enter
+`1_generative_ssm`, then use `tmux new -A -s student-sl` and
+`bash train_students_sequential.sh`. The eight students train one after another,
+without a teacher, and log online to W&B. See
+[the supervised student guide](SUPERVISED_STUDENTS_README.md) for the full command,
+plateau curriculum, output paths, and interrupted-run recovery.
+
 The lab computer is **`c204-17.eecs.berkeley.edu`** and the instructional
 account is **`eecs116-aaq`**. SSH was confirmed listening and `tmux` was
 installed on this machine on November 12, 2026. Authentication and connectivity
@@ -43,7 +50,7 @@ inside this session. The same applies to a training command wrapped in
 `timeout` for a scheduled cutoff. Start the run inside `tmux` from the beginning;
 creating a session later does not move an existing process into it.
 
-## Distill the teacher into all seven students
+## Distill the teacher into all eight students
 
 Create a separate session with `tmux new -s student-distill`. After activating
 `myenv` and entering `1_generative_ssm` as above, run:
@@ -54,12 +61,37 @@ bash distill_students.sh
 
 This selects the fastest measured safe serial/mixed/parallel student schedule,
 uses the completed `20261113-192121-curriculum-tujmpo0u` teacher by default, and
-logs all seven profiles online to W&B. The terminal prints the W&B URL, unique
+logs all eight profiles online to W&B. The terminal prints the W&B URL, unique
 checkpoint directory and adjacent console `.log` path. Pass `--teacher DIR`
 to select another completed teacher. It uses a 500-epoch ceiling with independent
 early stopping and exports verified WASM files after training.
+The full difficulty curriculum is on by default: motion, appearance, IMU noise
+and sequence length advance on sustained improvement or healthy plateaus.
+Each axis requires every active student to qualify. Plateaued ready students
+pause weight updates while peers catch up, keep validating, and resume when
+shared difficulty changes. Terminal and W&B metrics identify paused students.
+At each transition, students start the new stage from their own best checkpoint
+within the completed stage, restoring its matching optimizer state. The terminal,
+W&B and `stage_restores.jsonl` report those restores.
+Teacher and students receive the same augmented IMU. Pass
+`--no-difficulty-curriculum` to retain the older window-only schedule.
 
 Detach with Ctrl+B then D; reconnect with `tmux attach -t student-distill`.
+Use `bash distill_students.sh` for a fresh run. The failed six-epoch run's partial
+student weights have been removed; its diagnostic logs remain. The student guide
+describes warm-starting future interrupted runs whose checkpoints still exist.
+For the continued run that completed 15 epochs before an OptiX compilation failure, use:
+
+```bash
+bash distill_students.sh --warm-start checkpoints/distill-20261114-214629-357261 --warm-start-stage
+```
+
+This preserves stage-best weights, optimizer states and each student's saved
+curriculum readiness/pause counters. It infers epoch 16 as the next epoch,
+continues the saved scene index, and enables coordinated collector OOM/OptiX
+compilation recovery (one retry; persistent errors still stop).
+Longer windows now explicitly reduce minibatch size; memory tuning can reduce it
+further or disable teacher-target prefetch before any student update.
 See [the student guide](STUDENTS_README.md) for options, storage and evaluation.
 
 ## Fresh curriculum run with automatic checkpoint copying

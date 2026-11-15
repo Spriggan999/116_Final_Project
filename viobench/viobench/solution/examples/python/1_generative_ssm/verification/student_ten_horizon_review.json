@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-15",
+  "scope": "Ten default student SL/distillation horizons at two-second intervals.",
+  "horizons_seconds": [
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14,
+    16,
+    18,
+    20
+  ],
+  "windows_200hz": [
+    401,
+    801,
+    1201,
+    1601,
+    2001,
+    2401,
+    2801,
+    3201,
+    3601,
+    4001
+  ],
+  "updates": [
+    "Training CLI and bounded student benchmark share the default window list.",
+    "Explicit teacher SL curriculum preset updated to the same ten horizons.",
+    "Motion difficulty resets after each horizon extension; IMU/vision ordering and five-epoch sole-holdout exception retained."
+  ],
+  "recovery": "Known legacy 2/4/8/12/20-second staged checkpoints map the current horizon to its new index, preserving levels, gates, frozen peers and holdout wait state; only future intermediate horizons are added. Custom incompatible schedules remain rejected.",
+  "checks": {
+    "student_horizons_curriculum_holdout_memory_and_architecture": "45 passed, 5 GPU-only checks skipped, 2 deselected",
+    "static": "git diff --check, pyflakes and JSON validation passed"
+  },
+  "limitations": [
+    "Running Python processes need recovery/restart to load new defaults.",
+    "No long run started or existing training process altered."
+  ],
+  "source_sha256": {
+    "student_curriculum.py": "c6f70e5b967040f119080c989873faa438db25f8122e4e99176f687f95bed233",
+    "distill.py": "82c495fcac5409b8aa9f6d68692b74aee518ace2b04dfa2c6c162d31bea917f1",
+    "benchmark_students.py": "36685d8f8ac5468d6235568ffecb1c596fd6ab61e0b0cf14573ed981eab78f22",
+    "curriculum.json": "fd7a7c82ef25bc63e7758236140749847a91526caf50736453bd925970348397",
+    "tests/test_student_horizons.py": "568b8750e2cc7c7d8e99604b665e85ad0ab83389e5f842994dca3f3196842b11",
+    "tests/test_student_extensions.py": "20f1d39415753aa23cc1c607533b38b9e61d54893f571fe7c4738ffeba19538e",
+    "tests/test_distillation_memory.py": "6abd9acd371307e184f229165770c2b9bb17fe4ffcd3169e5e3fde44749c92f3"
+  }
+}

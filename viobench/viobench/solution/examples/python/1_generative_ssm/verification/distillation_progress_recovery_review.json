@@ -1,0 +1,87 @@
+{
+  "option": "--warm-start-stage automatically preserves per-student curriculum progression",
+  "restores": [
+    "Shared stage/axis/horizon levels",
+    "Individual gate references/best/ages/streaks",
+    "Readiness, pause and plateau flags",
+    "Final-stage exposure",
+    "Stopping counters/grace/active status",
+    "Stage-best index/selection and matching optimizers",
+    "All-run best export checkpoint",
+    "Completed epoch and next collection index"
+  ],
+  "persistence": "Atomic recovery_state.json per completed epoch; migrate existing curriculum_state.json and metrics when absent.",
+  "tests": {
+    "focused_host_suite": "42 passed",
+    "final_cli_recovery": "7 passed",
+    "logger_and_metadata_checks": "9 passed"
+  },
+  "previous_run_verified": {
+    "completed_epochs": 9,
+    "window": 801,
+    "axis_stages": {
+      "motion": 1,
+      "visual": 1,
+      "imu": 1
+    },
+    "collection_next_index": 8,
+    "individual_gate_ages": {
+      "motion": {
+        "500": 2,
+        "10k": 2,
+        "1m": 2,
+        "100m": 2,
+        "1m_ssm": 2,
+        "1m_hybrid": 2,
+        "100m_hybrid": 2
+      },
+      "visual": {
+        "500": 2,
+        "10k": 2,
+        "1m": 2,
+        "100m": 2,
+        "1m_ssm": 2,
+        "1m_hybrid": 2,
+        "100m_hybrid": 2
+      },
+      "imu": {
+        "500": 2,
+        "10k": 2,
+        "1m": 2,
+        "100m": 2,
+        "1m_ssm": 2,
+        "1m_hybrid": 2,
+        "100m_hybrid": 2
+      },
+      "window": {
+        "500": 2,
+        "10k": 2,
+        "1m": 2,
+        "100m": 2,
+        "1m_ssm": 2,
+        "1m_hybrid": 2,
+        "100m_hybrid": 2
+      },
+      "fit": {
+        "500": 2,
+        "10k": 2,
+        "1m": 2,
+        "100m": 2,
+        "1m_ssm": 2,
+        "1m_hybrid": 2,
+        "100m_hybrid": 2
+      }
+    }
+  },
+  "full_training_restarted": false,
+  "source_sha256": {
+    "distill.py": "b075da223d0137dd552f0ae6013c825eae47046736a4cd1dcce874109b151437",
+    "distillation_recovery.py": "7927bf18d0c531e5bd2d77706ad62ffbe9f7bb04c813136d943b29a531b717b2",
+    "distillation_curriculum.py": "30c5e76bda523be17283f278fca6fcb458e65dad6bcbadfe45815b1bbebeb4a1",
+    "distillation_checkpoints.py": "a7344c9891e41b3a704dfc06da4eb170fcf6d9d943f9189a707c720513576cdd",
+    "distillation_tracking.py": "310950ace78d064fe3ccea03490c1b980a37f8cfeb6aafab1be3338c5553e905",
+    "streaming.py": "7f375a8339d279f950d412a43bc78c7ccec373ed88a170d83cd058e06c7dddf2",
+    "tests/test_distillation_recovery.py": "72b99f70dbc206f41bbdbe01053055a1e14646e8f180108e6ad16038bcbbc5f1",
+    "tests/test_distillation.py": "2c0a79f0aa6449c6f56471423d7f5c3cbdc0dd9bb078211d6678a451f5f561b6"
+  }
+}

@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "student_weights.h"
+#if TEACHER_STYLE
+#include "native_vision.h"
+#endif
 #if STUDENT_SSM
 #include "native_ssm.h"
 #endif
@@ -67,6 +70,9 @@ int32_t init(const char *json,uint32_t length){
     memset(rotation,0,sizeof(rotation));rotation[3]=1;
     memset(gravity,0,sizeof(gravity));memset(omega,0,sizeof(omega));
     memset(hidden,0,sizeof(hidden));memset(previous,0,sizeof(previous));ready=gravity_ready=0;last_t=0;
+#if TEACHER_STYLE
+    frontend_reset();
+#endif
 #if STUDENT_SSM
     ssm_reset();
 #endif
@@ -77,7 +83,13 @@ static void prediction(const float *features,float *correction){
 #if STUDENT_SSM
     ssm_prediction(features,correction);
 #else
+#if TEACHER_STYLE && HIDDEN > 0
+    const float *w=W_INPUT_WEIGHT;
+#elif TEACHER_STYLE
+    const float *w=W_HEAD_WEIGHT;
+#else
     const float *w=WEIGHTS;
+#endif
 #if HIDDEN > 0
     float next[HIDDEN];
     const float *input=w,*bias=input+HIDDEN*FEATURES,*recurrent=bias+HIDDEN;
@@ -133,14 +145,30 @@ int32_t step(double t,const uint8_t *frame,const double *imu,int32_t count,doubl
         norm=sqrt(norm);if(norm>1e-5){for(int j=0;j<3;j++)gravity[j]*=-9.81/norm;gravity_ready=1;}
     }
     float features[FEATURES],correction[9];int n=0;
+#if TEACHER_STYLE
+    float gray[GRID_SIZE];
+#endif
     for(int y=0;y<GRID_HEIGHT;y++)for(int x=0;x<GRID_WIDTH;x++){
         int yy=(2*y+1)*height/(2*GRID_HEIGHT),xx=(2*x+1)*width/(2*GRID_WIDTH);
         const uint8_t *rgb=frame+3*(yy*width+xx);
         float value=(rgb[0]+rgb[1]+rgb[2])*(1.f/765.f);
+#if TEACHER_STYLE
+        gray[n++]=value;
+#else
         features[n]=value;features[GRID_SIZE+n]=ready?value-previous[n]:0;previous[n++]=value;
+#endif
     }
+#if TEACHER_STYLE
+    float sensor[6],encoded[EMBEDDING_DIM],innovation[EMBEDDING_DIM];
+    for(int j=0;j<6;j++)sensor[j]=ready?(float)mean[j]:0.f;
+    frontend_pair(gray,sensor,(float)interval,ready,encoded,innovation);
+    for(int j=0;j<EMBEDDING_DIM;j++){features[j]=encoded[j];features[EMBEDDING_DIM+j]=innovation[j];}
+    for(int j=0;j<6;j++)features[2*EMBEDDING_DIM+j]=sensor[j]/10.f;
+    features[FEATURES-2]=(float)interval;features[FEATURES-1]=1.f;
+#else
     for(int j=0;j<6;j++)features[2*GRID_SIZE+j]=(float)(mean[j]/10);
     features[FEATURES-1]=(float)fmin(4,interval*20);
+#endif
     prediction(features,correction);
     if(ready&&count){
 #if AGGREGATE

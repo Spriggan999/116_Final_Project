@@ -1,0 +1,71 @@
+{
+  "date": "2026-11-15",
+  "scope": "Add the 100K fuel student to the eight-profile fresh supervised training workflow; retain older source-profile recovery.",
+  "resource_check": {
+    "module": "/tmp/hyperdrone-100k-limits-gd5ldg47/student.wasm",
+    "module_sha256": "87be42fd5c2d5b86b4ee91ab88ecb769c00e398f462fbebc86c3f97e71dfb12c",
+    "bytes": 46525,
+    "frames_requested": 1200,
+    "frames_completed": 1200,
+    "simulated_duration_seconds": 60.0,
+    "limits": {
+      "init_fuel": 200000000000,
+      "step_fuel": 100000,
+      "memory_bytes": 2147483648,
+      "table_elements": 1048576,
+      "init_wall_seconds": 300.0,
+      "step_wall_seconds": 60.0
+    },
+    "max_upload_bytes": 134217728,
+    "episode_timeout_seconds": 1440,
+    "passed": true,
+    "fuel_step_max": 84184,
+    "wall_step_seconds_max": 0.00013266399037092924,
+    "memory_bytes_observed_max": 67108864,
+    "width": 320,
+    "height": 240,
+    "fuel_init": 16842,
+    "wall_init_seconds_reported": 4.757600254379213e-05,
+    "elapsed_seconds": 1.5626221630082,
+    "profile_kind": "student resource check; not an accuracy evaluation",
+    "weights_sha256": "a73719a9d0a98fd1758771aa27ced06683d53ffe912c0c19930022093ebec238",
+    "parameters": 4417,
+    "settings": {
+      "fuel": 100000,
+      "grid_width": 8,
+      "grid_height": 6,
+      "hidden": 48,
+      "aggregate": false,
+      "teacher_style": true,
+      "embedding_dim": 8,
+      "predictor_hidden": 8,
+      "vision_channels": [
+        2,
+        4
+      ],
+      "vision_padding": 1,
+      "vision_second_kernel": 3
+    }
+  },
+  "checks": {
+    "focused_100k_cli_recovery_launcher": "7 passed, 35 deselected",
+    "supervised_extensions_distillation": "31 passed, 5 skipped, 6 deselected",
+    "cuda_distillation_pipeline_eight_profiles": "7 passed",
+    "static": "git diff --check, bash -n, pyflakes passed"
+  },
+  "limitations": [
+    "Untrained perturbed-weight resource and correctness checks; no accuracy or convergence result.",
+    "No new long training run launched."
+  ],
+  "source_sha256": {
+    "students/model.py": "5f7e54859130a505bc70414c64cc31a0d863dd626e5d1a55b7a492717e25bb3a",
+    "students/export.py": "f60c7d41c4de4d55aa0b4a24651348ca7584ba89edee9613cec3297c3b475e6a",
+    "students/native.c": "2f730d13d581a51d08e6029aed75ba774609514fd731fc1ff1ac098f94a6508c",
+    "students/native_vision.h": "09e87255d2cf5583361f2da91306a79fe32cd8c0798ee41158aa7af23404f4c9",
+    "distill.py": "897ed09e57f9e6607cace21fee0d68fa7ef6128c9b82a61d92fad345502fdc97",
+    "train_students_sequential.sh": "362251cfdad1df135d348c7e165e24f4e3a6bcce6acb933ea97ae0f8ba6651d4",
+    "evaluate_students.py": "b675b34191db96c0151fa940d2e07f0d6f86eab0ec8a6a8741c6391ec2dc137b",
+    "tests/test_student_frontends.py": "64781d3bf1c56596dfbc07c5e7a8c15937af5fc4e78a760d4885d49f8b6366b9",
+    "tests/test_student_supervised.py": "ef75893eb9fba0771a314840b0b210a5c1035d5b04c047561b601d1c54189a1c"
+  }
+}

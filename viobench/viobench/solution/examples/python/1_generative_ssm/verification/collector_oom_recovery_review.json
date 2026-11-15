@@ -1,0 +1,44 @@
+{
+  "cause": "Native OptiX scene 32 (HSSD 12; 3439 meshes) cudaMalloc OOM while PyTorch training/cache shared GPU memory.",
+  "fix": "One exclusive retry of an unpublished collector batch after draining GPU launches and releasing unused cache; one flight at a time; normal overlap resumes.",
+  "error_reporting": "Bounded native stdout/stderr diagnostic tail attached to collector exceptions; non-OOM and persistent errors propagate.",
+  "recovery_command": "bash distill_students.sh --warm-start checkpoints/distill-20261114-204438-341926 --warm-start-stage --start-epoch 9",
+  "restart_semantics": "New run, rolling stage-best model and matching optimizer, saved curriculum levels, fresh readiness/patience; not an exact last-update replay.",
+  "tests": {
+    "host_suite": "30 passed",
+    "native_probe": {
+      "scene_index": 32,
+      "cache_before_mib": 12288.0,
+      "cache_after_mib": 0.0,
+      "instances": 1,
+      "episodes": 2,
+      "success": true,
+      "collection": {
+        "episodes": 2,
+        "captures": 52,
+        "seconds": 22.78835865300789,
+        "captures_per_second": 2.281866842267571,
+        "instances": 1,
+        "build_seconds": 20.370092109005782,
+        "rollout_seconds": 1.898863343987614,
+        "compression_level": 1,
+        "recording_bytes": 17370950,
+        "repaired_empty_primitives": 0,
+        "compression_seconds": 0.3193012580013601,
+        "write_seconds": 0.0039279600023292005,
+        "simulated_captures": 52,
+        "rollout_captures_per_second": 27.3848037377982
+      }
+    }
+  },
+  "full_training_restarted": false,
+  "source_sha256": {
+    "gpu_collection.py": "451cc89cc21763b0176281fd87bef813705793d197309c1c1b976a09b82a0739",
+    "streaming.py": "707cef4f6348029ffc1a010c30ca4c2b336356937f152f972a645be450e658bb",
+    "distillation_pipeline.py": "982233d5058d937d47975d9de479ee424b48e9cd03bb96fa21d4220f77d090ee",
+    "distill.py": "e59a8bed7c92c4522379f16da6ac6df790b9bf5edc074ab7a7b7bede93583f26",
+    "tests/test_gpu_collection.py": "0870e11c1d0faf5ddbbfc86d6d28d5dbcc7738f98786210ccfa45f635026502b",
+    "tests/test_distillation.py": "17441d433fde3b3a4a1c7304ef415c7aeba0930aa2e556d639ad218dc15a0cc2",
+    "tests/test_distillation_launch.py": "e09ae755812fccc0a0525f69378370cfad966627e1d0bb1b96a376d7f2976bc7"
+  }
+}

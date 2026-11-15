@@ -1,0 +1,29 @@
+{
+  "policy": "Restore each student stage-best model and matching optimizer before the first update at a new joint difficulty/horizon.",
+  "selection": "Lowest complete-flight Mean Sim(3)-aligned validation ATE among completed epochs within the current stage; reset selection on every transition.",
+  "storage": "One atomic rolling PROFILE/stage_best.pt per student; global PROFILE/student.pt export selection remains separate.",
+  "tests": {
+    "focused_suite": "29 passed",
+    "devices": [
+      "CPU",
+      "CUDA AdamW",
+      "CUDA fused AdamW"
+    ],
+    "checks": [
+      "Exact weight/optimizer restoration",
+      "Identical next update after restoration",
+      "Select a current-stage best even when worse than an earlier stage",
+      "Interrupted save preserves previous checkpoint",
+      "End-to-end paused/student restore source matches stage metrics",
+      "W&B restore metadata"
+    ]
+  },
+  "full_training_restarted": false,
+  "source_sha256": {
+    "distill.py": "a872c7b97010fe4fad510847414aa815925eebdb62f6169045c03781ff3be893",
+    "distillation_checkpoints.py": "15f055bfc84e680b0937d249e3a570a942a49a4192ca5f505dbe954102c11653",
+    "distillation_tracking.py": "bfcc35352514ff4ebb6ffff21df5d5ee7275d534600764f2505b2a6b6b65b683",
+    "tests/test_distillation_checkpoints.py": "40b6b17b9d4ac73bee5fd281525a396d905ab512b77313c547bcd80ef51a81dd",
+    "tests/test_distillation_freezing.py": "5c500ca77154e05b074db81c02553f9287f57c30cc858d407d2986ed5cc9b5c9"
+  }
+}

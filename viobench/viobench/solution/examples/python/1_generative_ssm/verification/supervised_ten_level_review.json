@@ -1,0 +1,56 @@
+{
+  "policy": "staged_plateau_only_10_levels",
+  "levels": [
+    0.0,
+    0.1111111111111111,
+    0.2222222222222222,
+    0.3333333333333333,
+    0.4444444444444444,
+    0.5555555555555556,
+    0.6666666666666666,
+    0.7777777777777778,
+    0.8888888888888888,
+    1.0
+  ],
+  "horizons_seconds": [
+    2,
+    4,
+    8,
+    12,
+    20
+  ],
+  "training_mix": {
+    "current": 0.75,
+    "all_earlier": 0.25,
+    "harder": 0.0
+  },
+  "validation": {
+    "easier_replay": false,
+    "phase_probes": "fixed current-category windows and seeded augmentation",
+    "full_trajectory_ate": "all eight held-out ProcTHOR recordings; no added augmentation"
+  },
+  "random_errors": {
+    "imu_amplitude_factor": [
+      0.5,
+      1.0
+    ],
+    "per_channel_per_flight": true,
+    "blur": "Uniform(0, 0.5 * level)",
+    "brightness_and_contrast": "Uniform(1 - 0.4 * level, 1 + 0.4 * level)"
+  },
+  "order": "motion 0..9 at each horizon; reset motion after horizon increase; at final horizon/motion: IMU 0..9, then vision 0..9",
+  "tests": {
+    "latest_supervised": "16 passed",
+    "broader_suite": "66 passed, 1 skipped; three spawn cases initially blocked by sandbox sockets",
+    "host_worker_rerun": "4 passed, including all three blocked cases",
+    "static": "pyflakes, git diff --check, bash -n passed"
+  },
+  "new_long_training_started": false,
+  "source_sha256": {
+    "curriculum.py": "d6048dee7e60a4b98f4d22d1484d994429f4f0fc08407d97c934769d94206cb6",
+    "student_curriculum.py": "dc81c30679178d68f93993b10e69144c2736f1d4fb243c414e1ca0b4b6428c7a",
+    "config.py": "915f8178f3e8c9748b72f7ff5e9d39825af97fc7883a2977884e6ec49b630cd0",
+    "distill.py": "e268e88b476282bc0da89f44f0be803ad0671e70f673b4d386a35b86c8dc5e9a",
+    "tests/test_student_supervised.py": "7878826db3172728ab5eba7933f302e71b3604d75656860928c761601126ff82"
+  }
+}

@@ -1,5 +1,25 @@
 # HyperDrone: commands and getting started
 
+For fresh ground-truth-only training of all eight budget students, one after
+another, use [the supervised student guide](SUPERVISED_STUDENTS_README.md):
+`bash train_students_sequential.sh`. It needs no teacher checkpoint and uses
+plateau-first motion progression within each horizon, then IMU noise followed by
+visual augmentation after IMU noise reaches its maximum.
+Each difficulty axis has ten levels, with 75% current / 25% any-earlier-level
+replay during training only, and randomized IMU error amplitudes and blur.
+Shared student runs allow a sole holdout to advance after all peers have stayed
+frozen for five completed epochs; see [the supervised guide](SUPERVISED_STUDENTS_README.md).
+Its current preset uses ProcTHOR only: 192 training scenes and 8 validation
+scenes. HSSD is excluded from these fresh supervised runs.
+Fresh student runs now add a JEPA-style auxiliary embedding objective with
+a training-only EMA encoder; see [the loss functions](LOSSES_README.md).
+All eight fresh students now include learned visual encoding and causal
+embedding prediction ahead of their existing state-backbone families; see
+[the measured architecture comparison](STUDENT_ARCHITECTURES_README.md).
+The smallest default is now `1k`, with a real 2D CNN, the same nine-correction output as larger
+students and a 6,000-fuel export cap (5,195 measured),
+replacing the scalar `500` tier. Saved 500-fuel checkpoints remain exportable.
+
 This guide explains how to train the full-resolution teacher with SL followed by
 PPO, produce `.wasm` submissions for both stages, and evaluate them.
 
@@ -26,7 +46,7 @@ The usual workflow is:
 2. Train with background data generation.
 3. Export, bundle, and check the trained model.
 4. Evaluate accuracy on actual benchmark episodes.
-5. Optionally [distill the teacher into seven fuel-budgeted students](#14-distill-teachers-into-fuel-budgeted-students).
+5. Optionally [distill the teacher into eight fuel-budgeted students](#14-distill-teachers-into-fuel-budgeted-students).
 
 **Run commands one line at a time.** Do not copy the terminal prompt or add `\`
 to the end of a command. Wait for a command to succeed before continuing.
@@ -566,7 +586,7 @@ python train.py --from-checkpoints checkpoints/RUN --stream-data --config curric
 ```
 
 `curriculum.json` enables `USE_CURRICULUM`, requests 4,001-sample recordings,
-and gives state SL windows of **2 → 4 → 8 → 12 → 20 seconds**. PPO uses
+and gives state SL windows of **2 → 4 → 6 → 8 → 10 → 12 → 14 → 16 → 18 → 20 seconds**. PPO uses
 **2 → 5 → 10 → 20 seconds**. Sample counts include the initial state. It uses batch
 size up to eight, 60 PPO iterations, and a proposed longer-horizon discount of 0.9995.
 The 3,208-token budget caps SL state batches at **8/4/2/1/1** across its horizons,
@@ -1170,10 +1190,10 @@ For model internals and the limits of the measured resource profile, continue to
 
 Use a complete teacher checkpoint set: `checkpoints/RUN/post_sl` for its SL
 version, or `checkpoints/RUN` for the final PPO-selected version. Distillation
-freezes both teacher components and trains seven separate compact students.
+freezes both teacher components and trains eight separate compact students.
 The teacher's checkpoints are preserved.
 
-With `myenv` active and your terminal in `1_generative_ssm`, train all seven
+With `myenv` active and your terminal in `1_generative_ssm`, train all eight
 students with background recording generation:
 
 ```bash
@@ -1196,10 +1216,37 @@ one teacher forward pass per training minibatch; targets stay in RAM. The same
 three-slot recording budget and bounded reuse policy apply. Validation recordings
 stay fixed. Defaults are **500 maximum epochs** and patience of **8 non-improving
 fresh batches** (8 epochs for fixed data), independently for each student.
-The shared horizon advances through 401, 801, 1601, 2401 and 4001 IMU samples,
-six epochs at each introductory stage. Early stopping starts at the final
-20-second stage. All checkpoint comparisons use complete held-out trajectories
+The shared horizon advances through 401, 801, 1201, 1601, 2001, 2401, 2801,
+3201, 3601 and 4001 IMU samples: ten stages from 2 to 20 seconds in two-second steps.
+The default full curriculum also increases motion, appearance and IMU difficulty,
+advancing on sustained improvement or a healthy plateau using fixed per-axis
+probes and fresh recording batches. Each axis waits for every active student's
+individual readiness. Plateaued, ready students pause optimizer updates while
+peers catch up, retain validation, and resume on any difficulty change.
+Before training at the new difficulty, each student restores its own best
+checkpoint from the stage just completed, including matching optimizer state.
+`PROFILE/stage_best.pt` is a rolling stage-local slot; the separate all-run
+`PROFILE/student.pt` remains the final export checkpoint.
+Teacher and students share the same augmented
+observations, so correction labels remain consistent with added sensor errors.
+Early stopping waits for every axis and final-horizon exposure; promotions reset
+patience. `--no-difficulty-curriculum` restores fixed six-epoch window advancement.
+All checkpoint comparisons use complete held-out trajectories
 and equal-per-episode Mean Sim(3) ATE. `--window N` selects a fixed horizon.
+Distillation explicitly limits minibatches to 8/4/2/1/1 at these horizons,
+independently of the teacher curriculum flag. If GPU scheduling probes do not
+leave 15% memory headroom, it reduces the batch before training or disables
+teacher-target prefetch at batch size one. `--warm-start DISTILL_RUN --start-epoch N`
+loads saved best student weights into a new run at the requested curriculum
+epoch, with fresh optimizers/patience; see [the student guide](STUDENTS_README.md).
+Add `--warm-start-stage` to recover rolling stage-best weights with their matching
+optimizer state and per-student curriculum progression instead. This recovery
+also retains readiness/pause flags, stopping counters, stage/epoch numbers and
+the next collection index; omit `--start-epoch` to infer it automatically.
+Collector GPU OOMs and the specific OptiX module-compilation failure receive one coordinated retry
+with training GPU work paused, unused cache released and one flight at a time;
+normal background parallelization resumes afterward. Compilation failures are
+tracked separately from OOMs; persistent failures still stop with diagnostics.
 W&B defaults online in `hyperdrone-vio-fuel-aware`; use `--wandb-mode offline`
 or `disabled` for a local run. The 500-epoch ceiling does not force converged
 students to keep training. A plateau is not proof of a good fit.
@@ -1303,7 +1350,11 @@ checkpoints/DISTILL_RUN/1m/native/student.wasm
 checkpoints/DISTILL_RUN/100m/native/student.wasm
 ```
 
-### Minimal 500-fuel visual/IMU tier
+### Legacy 500-fuel visual/IMU tier
+
+The fresh default is now the 1K CNN tier (`--profiles 1k`); see
+[the architecture comparison](STUDENT_ARCHITECTURES_README.md). The following
+section describes the earlier raw-pixel 500 checkpoint architecture.
 
 ```bash
 python distill.py --teacher checkpoints/RUN --stream-data --profiles 500
@@ -1347,7 +1398,9 @@ native export already produces a standalone `.wasm`.
 python distill.py --teacher checkpoints/RUN --stream-data --profiles 10k 1m --epochs 200 --patience 12 --skip-export
 ```
 
-`--profiles` accepts any subset of `500 10k 1m 100m 1m_ssm 1m_hybrid 100m_hybrid` (all seven by default). Each profile saves its own
+`--profiles` defaults to `1k 10k 100k 1m 100m 1m_ssm 1m_hybrid 100m_hybrid`.
+The older `500` name remains accepted explicitly for compatibility/recovery.
+Each profile saves its own
 `student.pt`, `student.json` and `metrics.jsonl`. The run root records the teacher
 path, model settings and checkpoint hashes in `distillation.json`.
 

@@ -1,5 +1,111 @@
 # Teacher and student resource profiles
 
+The [ten-horizon review](student_ten_horizon_review.json) records the default
+2/4/6/8/10/12/14/16/18/20-second schedule and recovery from older five-horizon
+checkpoints without resetting current difficulty, readiness or holdout counters.
+Forty-five checks passed; five GPU-only cases were skipped. Motion still resets
+at each horizon extension; the sole-holdout exception remains active.
+
+The [sole-holdout timeout review](sole_holdout_timeout_review.json) records the
+five-completed-epoch exception to the shared staged student barrier. Seven new
+checks cover exact timing, reused recordings, regression/identity/group guards,
+recovery, horizon resets, stage-best restoration and W&B reporting. Sixteen
+supervised regressions and four tracking checks passed; the offline W&B check
+requires a host local socket. Ordinary plateau criteria and stage-best recovery
+remain active. See the [supervised guide](../SUPERVISED_STUDENTS_README.md).
+
+The [student alignment review](student_alignment_review.json) records the new
+0.1-weight Sim(3) camera-trajectory auxiliary, stable detached transform fitting,
+finite-difference/official-scorer agreement, degeneracy safeguards, CUDA updates
+for all eight profiles and serial/concurrent equivalence. Training follows the
+current horizon through complete 20-second flights; validation stays held out.
+The [supervised guide](../SUPERVISED_STUDENTS_README.md) includes the existing
+auto-parallel scheduler's tmux command. No long training run was launched.
+
+The [unaligned MTE review](unaligned_mte_review.json) records complete-episode
+mean translation error and the separate unaligned ATE RMSE diagnostic, using
+camera timestamps, lever arms and official invalid-state filling. Both reach
+student/teacher/PPO W&B logs. Eighteen metric/recovery checks and one streaming
+SL+PPO/continued-PPO check passed. Selection/stopping criteria are unchanged.
+
+The [loss component logging review](loss_component_logging_review.json) records
+raw values, coefficients and weighted contributions for student/teacher state
+losses, JEPA, correction KD, RGB/edge/flow and PPO. Reconstruction and gradient
+invariance checks passed, along with eight-profile CUDA updates, checkpoint
+recovery and embedding/RGB SL+PPO end-to-end checks. Telemetry uses detached
+sample-weighted means. See the [metric guide](../LOSSES_README.md#component-logging-and-balancing-weights)
+for W&B keys and local files. Existing weights and selection criteria are unchanged.
+
+The [student JEPA review](student_jepa_review.json) records the default auxiliary
+embedding objective with stop-gradient EMA targets, content/variance/covariance
+regularization, checkpoint recovery, W&B components and CUDA checks for all eight
+profiles. EMA weights are training-only buffers and are excluded from deployment
+weights/offsets. Nineteen CPU checks, two CUDA checks and twelve checkpoint/tiny
+native/WASM regressions passed. See [all loss functions](../LOSSES_README.md).
+No new long training run or accuracy evaluation was launched.
+
+The [1K nine-correction review](student_1k_nine_corrections_review.json) records
+the current 169-parameter model: the same bounded gyro/body-acceleration/initial-
+frame-acceleration outputs and generic integration path as larger students. It
+measured **5,195/6,000 fuel/frame** over 1,200 WASM frames. Native/WASM agreement,
+all nine correction semantics, gradients, legacy/CLI recovery and 20-second CUDA
+agreement passed. The name `1k` remains for CLI compatibility; its export cap is
+now 6,000. Earlier six-output orientation results below are historical.
+
+The [1K orientation review](student_1k_orientation_review.json) records the new
+82-parameter learned acceleration/gyro/vision heads and normalized quaternion
+integration. The 1,200-frame WASM check measured **1,031/1,100 fuel/frame**.
+Native/WASM parity, camera extrinsics/lever arm, changing attitude, learned gyro
+gradients, legacy compatibility, CLI recovery and CUDA parallel 20-second
+integration checks passed. Earlier 64-parameter 1K results below are historical.
+The new model needs fresh training; no accuracy evaluation was performed.
+
+The [100K student review](student_100k_review.json) records the new 4,417-parameter
+CNN/embedding-forecaster/RNN student: **84,184/100,000 fuel per frame** over a
+1,200-frame WASM resource check. All eight default profiles are integrated into
+the sequential launcher and CUDA scheduling checks. The focused 100K, CLI recovery
+and launcher suite passed seven tests. These are correctness/resource checks;
+no new long training run or accuracy evaluation was launched.
+
+The [1K CNN review](student_1k_cnn_review.json) records the replacement of the
+default scalar 500 tier with a real spatial CNN: 4×4 gray grid, two shared 2×2
+filters, 2D embedding and an 11→2→2 forecaster. Its 64 parameters completed a
+1,200-frame WASM check at **750/1,000 fuel**, native/PyTorch parity and BF16 CUDA
+training. Older 500 checkpoints remain compatible with their saved caps.
+
+The [learned student frontend review](student_frontend_review.json) records all
+seven new encoder/embedding-forecaster/state pipelines, native/WASM parity and
+CUDA/BF16 ground-truth training checks. Every new model passed a 1,200-frame
+resource check; the 500 tier uses a scalar substitute because the tested general
+full-pose CNN alternative exceeds its cap. See the
+[architecture comparison](../STUDENT_ARCHITECTURES_README.md) for shapes,
+parameters, cadence differences, measured fuel and the new sequential order.
+
+The [ten-level curriculum review](supervised_ten_level_review.json) records the
+current supervised policy: ten motion/IMU/vision levels, 75% current and 25%
+all-earlier-category training replay, and randomized IMU amplitudes and blur.
+Validation has no easier-category replay. The latest supervised suite passed
+all 16 checks; the broader legacy curriculum checks and host worker reruns are
+recorded separately in that review.
+
+The [supervised student review](student_supervised_review.json) records the
+ground-truth-only path, plateau-only staged curriculum, 41 passing regression
+tests and one real CUDA training/validation epoch across all seven architectures.
+This is a bounded correctness check, not an accuracy/convergence measurement.
+Use [the supervised guide](../SUPERVISED_STUDENTS_README.md) to train the eight
+models sequentially from fresh weights.
+
+The [two-scene six-second screening](../checkpoints/heldout-6s-eval-epoch64/README.md)
+evaluates saved student deployment checkpoints and the exported teacher on the
+same held-out ProcTHOR/HSSD episode pair. The snapshot was taken at completed
+epoch 67 (the output folder name predates the pause). Training resumed afterward.
+See its [comparison table](../checkpoints/heldout-6s-eval-epoch64/results/comparison.md)
+and [chart](../checkpoints/heldout-6s-eval-epoch64/results/pareto.png).
+The area calculation uses the website implementation, but comparison against
+the supplied baseline table is approximate because the episodes differ.
+`evaluate_heldout_snapshot.py` reproduces the snapshot/evaluation workflow;
+pass `--teacher PATH` to include a teacher WASM and use a fresh output directory.
+
 The [latest training and capacity review](training_optimization_review.md) covers
 CUDA input-memory reductions, parallel training physics, vectorized PPO, HSSD
 empty-mesh recovery and the full resource check for a 96-dimensional candidate.

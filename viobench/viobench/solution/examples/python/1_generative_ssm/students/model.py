@@ -1,10 +1,10 @@
-"""Frame-rate recurrent correction networks and their differentiable integrator."""
+"""Budgeted visual encoders, embedding forecasters and recurrent state models."""
 import torch
 from torch import nn
 import torch.nn.functional as F
 from performance import neural_autocast
 
-PROFILES={
+LEGACY_PROFILES={
     '500': dict(fuel=500,grid_width=2,grid_height=1,hidden=0,aggregate=True,kind='visual_imu_affine'),
     '10k': dict(fuel=10_000,grid_width=6,grid_height=3,hidden=0,aggregate=True),
     '1m': dict(fuel=1_000_000,grid_width=8,grid_height=6,hidden=192,aggregate=False),
@@ -17,10 +17,62 @@ PROFILES={
                         kind='mamba2',layers=3,d_state=16,headdim=32,attention_dim=384,heads=4,window=16),
 }
 
+# All new students have an online encoder, a causal embedding forecaster, and
+# their original kind of state model. Legacy JSON/checkpoints remain loadable.
+PROFILES={name:dict(spec,teacher_style=True,embedding_dim=(1 if name=='500' else 4 if name=='10k' else 32 if name.startswith('100m') else 16),
+    predictor_hidden=(1 if name=='500' else 4 if name=='10k' else 128 if name.startswith('100m') else 32),
+    vision_channels=([0,0] if name=='500' else [2,4] if name=='10k' else [16,32] if name.startswith('100m') else [4,8]),
+    vision_padding=(0 if name=='10k' else 1),vision_second_kernel=(1 if name=='10k' else 3))
+    for name,spec in LEGACY_PROFILES.items()}
+
+COMPAT_PROFILES={'500':PROFILES.pop('500')}
+PROFILES={'1k':dict(fuel=6_000,grid_width=4,grid_height=4,hidden=0,aggregate=True,
+                    teacher_style=True,embedding_dim=2,predictor_hidden=2,vision_channels=[2,0],
+                    vision_padding=0,vision_second_kernel=1,micro_cnn=True),
+          '10k':PROFILES['10k'],
+          '100k':dict(fuel=100_000,grid_width=8,grid_height=6,hidden=48,aggregate=False,
+                      teacher_style=True,embedding_dim=8,predictor_hidden=8,vision_channels=[2,4],
+                      vision_padding=1,vision_second_kernel=3),
+          **{name:spec for name,spec in PROFILES.items() if name!='10k'}}
+ALL_PROFILES={**PROFILES,**COMPAT_PROFILES}
+
+
+class BudgetVisualEncoder(nn.Module):
+    """Sparse-grid CNN; older tiny checkpoints retain their scalar projector."""
+    def __init__(self,settings):
+        super().__init__();self.settings=settings
+        self.micro=settings.get('kind')=='visual_imu_affine'
+        self.micro_cnn=bool(settings.get('micro_cnn',False))
+        e=settings['embedding_dim']
+        if self.micro_cnn:
+            self.conv1=nn.Conv2d(1,settings['vision_channels'][0],2,stride=2)
+            self.project=nn.Linear(settings['vision_channels'][0],e)
+        elif self.micro:
+            self.project=nn.Linear(2,e)
+        else:
+            c1,c2=settings['vision_channels'];p=settings['vision_padding'];k=settings['vision_second_kernel']
+            self.conv1=nn.Conv2d(1,c1,3,stride=2,padding=p)
+            self.conv2=nn.Conv2d(c1,c2,k,stride=1 if k==1 else 2,padding=0 if k==1 else 1)
+            self.project=nn.Linear(c2,e)
+
+    def forward(self,gray):
+        b,t,_=gray.shape
+        with neural_autocast(gray):
+            if self.micro_cnn:
+                x=gray.reshape(b*t,1,self.settings['grid_height'],self.settings['grid_width'])
+                x=F.leaky_relu(self.conv1(x),negative_slope=.1).mean((-2,-1))
+                value=F.leaky_relu(self.project(x),negative_slope=.1).reshape(b,t,-1)
+            elif self.micro:value=F.leaky_relu(self.project(gray),negative_slope=.1)
+            else:
+                x=gray.reshape(b*t,1,self.settings['grid_height'],self.settings['grid_width'])
+                x=F.relu(self.conv1(x));x=F.relu(self.conv2(x))
+                value=torch.tanh(self.project(x.mean((-2,-1)))).reshape(b,t,-1)
+        return value.float()
+
 
 def architecture_candidates(profile):
-    """Ordered, bounded fuel search; never change legacy RNN layouts."""
-    spec=dict(PROFILES[profile],profile=profile)
+    """Ordered, bounded fuel search preserving each profile's temporal family."""
+    spec=dict(ALL_PROFILES[profile],profile=profile)
     if spec.get('kind')!='mamba2':return [spec]
     if profile=='1m_ssm':changes=[{},dict(d_state=4)]
     elif profile=='1m_hybrid':
@@ -94,14 +146,30 @@ class BudgetStudent(nn.Module):
     def __init__(self,settings):
         super().__init__()
         self.settings=dict(settings)
+        self.teacher_style=bool(settings.get('teacher_style',False))
+        if self.teacher_style:
+            self.vision=BudgetVisualEncoder(settings)
+            e=settings['embedding_dim'];h=settings['predictor_hidden']
+            condition=3 if settings.get('kind')=='visual_imu_affine' else 6
+            self.embedding_predictor=nn.Sequential(nn.Linear(3*e+condition+2,h),
+                nn.LeakyReLU(.1) if condition==3 else nn.Tanh(),nn.Linear(h,e))
+            nn.init.normal_(self.embedding_predictor[-1].weight,std=.01)
+            nn.init.zeros_(self.embedding_predictor[-1].bias)
+            if settings.get('jepa_target'):
+                from student_embedding import initialize_target
+                initialize_target(self)
         if settings.get('kind') in ('imu_affine','visual_imu_affine'):
             self.features=7 if settings['kind']=='visual_imu_affine' else 0
             self.gain=nn.Parameter(torch.ones(3))
             self.bias=nn.Parameter(torch.tensor([0.,0.,-9.81]))
-            if settings['kind']=='visual_imu_affine':self.vision_weight=nn.Parameter(torch.zeros(3,4))
+            if settings['kind']=='visual_imu_affine':self.vision_weight=nn.Parameter(torch.zeros(3,2*settings['embedding_dim'] if self.teacher_style else 4))
+            if settings.get('orientation_head'):
+                self.gyro_gain=nn.Parameter(torch.ones(3))
+                self.gyro_bias=nn.Parameter(torch.zeros(3))
+                self.gyro_vision_weight=nn.Parameter(torch.zeros(3,2*settings['embedding_dim']))
             return
         n=settings['grid_width']*settings['grid_height']
-        self.features=2*n+7
+        self.features=2*settings['embedding_dim']+8 if self.teacher_style else 2*n+7
         h=settings['hidden']
         self.is_ssm=settings.get('kind')=='mamba2'
         if self.is_ssm:
@@ -168,6 +236,12 @@ class BudgetStudent(nn.Module):
                 x=self.attn_norm(x+self.attn_output(value))
             return (.25*torch.tanh(self.head(x))).float()
 
+    def load_state_dict(self,state_dict,strict=True,assign=False):
+        if self.settings.get('jepa_target'):
+            from student_embedding import hydrate_target_state
+            state_dict=hydrate_target_state(self,state_dict)
+        return super().load_state_dict(state_dict,strict=strict,assign=assign)
+
     def image_features(self,frames):
         """Native runtime samples the same RGB pixel centres from 320x240."""
         b,k,c=frames.shape[:3]
@@ -176,6 +250,23 @@ class BudgetStudent(nn.Module):
         yy=((2*torch.arange(ny,device=x.device)+1)*240//(2*ny)).long()
         xx=((2*torch.arange(nx,device=x.device)+1)*320//(2*nx)).long()
         return x[:,:,yy[:,None],xx[None,:]].mean(1).reshape(b,k,nx*ny)
+
+    def predicted_visual_features(self,gray,sensor,interval):
+        """Predict each current embedding using only prior captures and current IMU.
+
+        Same residual/timing construction as the teacher's latent predictor.
+        State loss trains all three modules jointly; no teacher is required.
+        """
+        encoded=self.vision(gray)
+        anchor=torch.cat([encoded[:,:1],encoded[:,:-1]],1)
+        previous=torch.cat([encoded[:,:1],anchor[:,:-1]],1)
+        prev_interval=torch.cat([interval[:,:1],interval[:,:-1]],1)
+        condition=sensor[:,:,:3] if self.settings.get('kind')=='visual_imu_affine' else sensor
+        features=torch.cat([previous,anchor,anchor-previous,condition/10.,interval[:,:,None],prev_interval[:,:,None]],-1)
+        with neural_autocast(features):residual=self.embedding_predictor(features).float()
+        residual=residual.clamp(-1,1) if self.settings.get('kind')=='visual_imu_affine' else torch.tanh(residual)
+        predicted=anchor+.25*residual*(interval/.05).clamp(0,2)[:,:,None]
+        return encoded,encoded-predicted
 
     def forward(self,images,imu,dt,gravity,ticks):
         if self.settings.get('kind') in ('imu_affine','visual_imu_affine'):
@@ -192,10 +283,15 @@ class BudgetStudent(nn.Module):
         if spans and all(span==spans[0] for span in spans):
             means=imu[:,ticks[0]+1:ticks[-1]+1].reshape(b,len(spans),spans[0],6).mean(2)
         else:means=torch.stack([imu[:,lo+1:hi+1].mean(1) for lo,hi in zip(ticks[:-1],ticks[1:])],1)
-        means=torch.cat([imu[:,ticks[0]:ticks[0]+1],means],1)
+        first=imu.new_zeros(b,1,6) if self.teacher_style else imu[:,ticks[0]:ticks[0]+1]
+        means=torch.cat([first,means],1)
         interval=torch.cat([dt.new_zeros(b,1),counts[None]*dt[:,None]],1)
-        previous=torch.cat([gray[:,:1],gray[:,:-1]],1)
-        features=torch.cat([gray,gray-previous,means/10.,(interval*20).clamp(max=4)[:,:,None]],-1)
+        if self.teacher_style:
+            encoded,innovation=self.predicted_visual_features(gray,means,interval)
+            features=torch.cat([encoded,innovation,means/10.,interval[:,:,None],torch.ones_like(interval[:,:,None])],-1)
+        else:
+            previous=torch.cat([gray[:,:1],gray[:,:-1]],1)
+            features=torch.cat([gray,gray-previous,means/10.,(interval*20).clamp(max=4)[:,:,None]],-1)
         corrections=self.sequence_corrections(features)
         if images.is_cuda:
             if self.settings['aggregate']:
@@ -223,18 +319,53 @@ class BudgetStudent(nn.Module):
                     corrections=corrections)
 
     def imu_forward(self,imu,ticks,images=None):
-        """Tiny affine acceleration model: 3 IMU axes + optional 2-pixel vision.
+        """Tiny affine motion model, optionally with learned gyro/vision attitude.
 
         Semi-implicit Euler and float32 match the SIMD native kernel exactly.
         Legacy imu_affine checkpoints retain their image-free equations. The
-        500 profile learns from two lumas and their temporal differences.
+        Tiny visual tiers use a learned CNN/forecaster, or legacy pixel features.
         """
         b=imu.shape[0]
         accelerations=imu[:,ticks[1:],:3]*self.gain+self.bias
         if self.settings.get('kind')=='visual_imu_affine':
             gray=self.image_features(images)
-            vision=torch.cat([gray[:,1:],gray[:,1:]-gray[:,:-1]],-1)
+            if self.teacher_style:
+                intervals=imu.new_full(gray.shape[:2],.05);intervals[:,0]=0.
+                encoded,innovation=self.predicted_visual_features(gray,imu[:,ticks],intervals)
+                vision=torch.cat([encoded[:,1:],innovation[:,1:]],-1)
+            else:vision=torch.cat([gray[:,1:],gray[:,1:]-gray[:,:-1]],-1)
             accelerations=accelerations+F.linear(vision,self.vision_weight)
+        if self.settings.get('orientation_head'):
+            omega=imu[:,ticks[1:],3:]*self.gyro_gain+self.gyro_bias+F.linear(vision,self.gyro_vision_weight)
+            if imu.is_cuda:
+                # Associative quaternion prefixes keep long windows on the GPU.
+                dq=F.normalize(torch.cat([omega*.025,torch.ones_like(omega[:,:,:1])],-1),dim=-1)
+                offset=1
+                while offset<omega.shape[1]:
+                    dq=torch.cat([dq[:,:offset],F.normalize(qmul(dq[:,:-offset],dq[:,offset:]),dim=-1)],1)
+                    offset*=2
+                initial=imu.new_zeros(b,1,4);initial[:,:,3]=1.
+                q=torch.cat([initial,dq],1)
+                gravity=imu.new_tensor([0.,0.,-9.81])
+                acceleration=qrotate(q[:,:-1],accelerations-gravity)+gravity
+                zero=imu.new_zeros(b,1,3)
+                v=torch.cat([zero,(acceleration*.05).cumsum(1)],1)
+                p=torch.cat([zero,(v[:,1:]*.05).cumsum(1)],1)
+                return dict(pos=p,vel=v,rot=qmatrix(q),omega=torch.cat([zero,omega],1),accelerations=accelerations)
+            q=imu.new_zeros(b,4);q[:,3]=1.
+            p=imu.new_zeros(b,3);v=p.clone()
+            positions=[p];velocities=[v];rotations=[qmatrix(q)]
+            gravity=imu.new_tensor([0.,0.,-9.81])
+            for acceleration,angular in zip(accelerations.unbind(1),omega.unbind(1)):
+                # Integrate specific force in the initial frame, then advance attitude.
+                acceleration=qrotate(q,acceleration-gravity)+gravity
+                v=v+acceleration*.05;p=p+v*.05
+                dq=torch.cat([angular*.025,torch.ones_like(angular[:,:1])],-1)
+                q=F.normalize(qmul(q,dq),dim=-1)
+                positions.append(p);velocities.append(v);rotations.append(qmatrix(q))
+            return dict(pos=torch.stack(positions,1),vel=torch.stack(velocities,1),
+                        rot=torch.stack(rotations,1),omega=torch.cat([imu.new_zeros(b,1,3),omega],1),
+                        accelerations=accelerations)
         if imu.is_cuda:
             zero=imu.new_zeros(b,1,3)
             v=torch.cat([zero,(accelerations*.05).cumsum(1)],1)

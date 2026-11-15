@@ -1,0 +1,43 @@
+{
+  "default_enabled": true,
+  "axes": [
+    "motion",
+    "visual",
+    "imu",
+    "window"
+  ],
+  "observations": "One shared augmented IMU/image batch for frozen teacher labels and all active students; ground truth remains unchanged.",
+  "progression": "Fresh-batch gates; median relative per-student probe error; sustained improvement or healthy plateau; regressions hold difficulty.",
+  "stopping": "All axes/final window complete plus fresh final-stage exposure; promotion grace; independent student patience.",
+  "tests": {
+    "focused_suite": "24 passed",
+    "existing_curriculum_and_memory_selection": "48 passed"
+  },
+  "real_teacher_gpu": {
+    "scope": "Two bounded training updates per horizon, full-resolution real recording, all seven warm-started students, maximum augmentation levels; no renderer.",
+    "results": [
+      {
+        "window": 801,
+        "updates": 2,
+        "batch_size": 4,
+        "max_concurrent": 4,
+        "target_prefetch": true
+      },
+      {
+        "window": 4001,
+        "updates": 2,
+        "batch_size": 1,
+        "max_concurrent": 4,
+        "target_prefetch": true
+      }
+    ]
+  },
+  "full_training_started": false,
+  "source_sha256": {
+    "distill.py": "a81540151aafaab075917bbcbdf1c113bf42ecb7caaca8b6c6e1416bbc89ca3e",
+    "distillation_curriculum.py": "96a3ab81ffad3beb80ef7a5de11594f8055add3875494fa9d8219ad55b1280b2",
+    "curriculum.py": "520f9889df132395892210123ec45a2bacde8e77c7da290ac296330acf8e15b0",
+    "distillation_tracking.py": "cb3d90b0fd0dd411ff1462e7889a05bbec6fc247cef733dd751d5ad015657ae0",
+    "tests/test_distillation_curriculum.py": "14fe6522c71fe8cf57c13494a200e01fa6b451428705e007902c00142776d61d"
+  }
+}

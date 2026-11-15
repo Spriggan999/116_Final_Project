@@ -4,11 +4,13 @@ import torch
 
 from data import state_input_frames
 from performance import amp_disabled
-from viobench.tools.runner.metrics import evaluate_trajectory
+from viobench.tools.runner.metrics import evaluate_trajectory,fill_missing_states
 
 ATE_CONFIG=dict(mean_ate_metric='sim3_ate_rmse_mean',mean_ate_aggregation='equal_per_episode',
                 mean_ate_sampling='camera_timestamps',mean_ate_scope='complete_validation_recordings',
-                mean_ate_inference='pytorch_validation')
+                mean_ate_inference='pytorch_validation',
+                unaligned_mte_metric='mean_euclidean_position_error_m',
+                unaligned_mte_aggregation='equal_per_episode',unaligned_mte_alignment='none')
 
 
 def episode_key(value):
@@ -19,6 +21,8 @@ class LeaderboardATE:
     """Score each complete episode once; never average independently reset windows."""
     def __init__(self):
         self.scores={}
+        self.unaligned_mte={}
+        self.unaligned_ate_rmse={}
         self.expected=set()
         self.calibrated=set()
         self.counter=0
@@ -54,13 +58,19 @@ class LeaderboardATE:
             valid=np.isfinite(predicted).all(-1)&np.isfinite(rotations).all((1,2))
             estimate[~valid]=np.nan  # official scorer fills invalid states with origin/identity
             times=np.flatnonzero(observed)*float(batch['dt'][i])
-            self.scores[name]=evaluate_trajectory(target,estimate,times).sim3_ate_rmse
+            scored=evaluate_trajectory(target,estimate,times)
+            self.scores[name]=scored.sim3_ate_rmse
+            self.unaligned_ate_rmse[name]=scored.ate_rmse
+            filled=fill_missing_states(estimate)
+            self.unaligned_mte[name]=float(np.linalg.norm(filled[:,:3]-target[:,:3],axis=-1).mean())
 
     def result(self):
         if not self.scores or self.expected-set(self.scores):
             raise ValueError('Mean Sim(3) ATE requires complete validation episodes')
         value=float(np.mean(list(self.scores.values())))
-        return dict(mean_ate_m=value,sim3_ate_rmse_mean=value,ate_episodes=len(self.scores),
+        return dict(mean_ate_m=value,sim3_ate_rmse_mean=value,
+                    unaligned_mte_m=float(np.mean(list(self.unaligned_mte.values()))),
+                    unaligned_ate_rmse_m=float(np.mean(list(self.unaligned_ate_rmse.values()))),ate_episodes=len(self.scores),
                     ate_camera_calibrated_episodes=len(self.calibrated))
 
 

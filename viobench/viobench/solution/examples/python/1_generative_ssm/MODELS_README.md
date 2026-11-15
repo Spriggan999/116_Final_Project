@@ -2,6 +2,9 @@
 
 For environment setup and runnable commands, use [README.md](README.md).
 This document explains the current architecture and training implementation.
+For the seven budget students' learned encoders, embedding forecasters, retained
+temporal backbones and measured fuel limits, see
+[the student architecture comparison](STUDENT_ARCHITECTURES_README.md).
 The project originated as `hyperdrone_vio_official_viobench_colab.ipynb` and follows
 VIOBench's `train.py` plus bundleable `solution/` structure.
 

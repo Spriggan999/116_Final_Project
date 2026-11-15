@@ -1,0 +1,28 @@
+{
+  "policy": "all_students_ready",
+  "curriculum_group": "All active students; CUDA execution groups do not control progression.",
+  "pause": "Ready on every unfinished axis and healthy full-trajectory ATE plateau; skip optimizer updates while retaining full validation and probes.",
+  "resume": "Any shared promotion clears readiness and resumes all; regression revokes readiness and pause; warm starts re-establish readiness.",
+  "teacher": "One frozen shared teacher; targets remain shared across training students.",
+  "tests": {
+    "focused_host_suite": "38 passed, including CUDA subset validation/resume and seven-model serial/parallel equivalence",
+    "weights_and_optimizer": "Exact preservation while peer trains and validation runs",
+    "controlled_cli": "Small student paused on epochs 4 and 5, peer trained every epoch, small student resumed at epoch 6",
+    "no_zero_loss": "Paused JSON training loss null; terminal paused label and W&B pause/readiness states"
+  },
+  "checks": [
+    "Identical readiness probe examples after batch reduction",
+    "Retune when a previously seen student set resumes",
+    "Include models omitted by the current tuned training groups during validation"
+  ],
+  "full_training_restarted": false,
+  "source_sha256": {
+    "distill.py": "359e124af7f970efad3ddb20a15901e9d2af52330713efd03eb31ff4660e0bcd",
+    "distillation_curriculum.py": "42ab804331323c64c836315a9138453cfa9e6082fb41efff3a9d3b2ab0155f35",
+    "distillation_pipeline.py": "1e8f85f85fd13548067d12927abdff45de9fa4f6bcea6a8a40705fac2e8cabf5",
+    "distillation_tracking.py": "f41915102706822fd50e8a7a52a41e8b8f0788440be1b5762a728a59b9da1265",
+    "tests/test_distillation_freezing.py": "c09080583c145999cc1e8802d7a61a538a49587e2536d7ee1652cad4de9e0c14",
+    "tests/test_distillation_curriculum.py": "31ac5058232916554537106bdd7fea853347e92ecfef896b461b1693742d80ce",
+    "tests/test_distillation_memory.py": "be7c4fed49ee117617042f739c3e8f547c6a7a167477f89d41fd4af5fc3d34bf"
+  }
+}

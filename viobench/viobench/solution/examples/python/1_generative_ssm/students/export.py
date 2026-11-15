@@ -15,9 +15,14 @@ WORKSPACE=HERE.parents[3]
 sys.path.insert(0,str(WORKSPACE.parents[1]))
 
 
+def deployment_state(model):
+    from student_embedding import PREFIX
+    return {name:value for name,value in model.state_dict().items() if not name.startswith(PREFIX)}
+
+
 def ordered_weights(model):
-    if model.settings.get('kind')=='mamba2':
-        return np.concatenate([value.detach().cpu().numpy().ravel() for value in model.state_dict().values()]).astype('<f4')
+    if model.settings.get('kind')=='mamba2' or model.settings.get('teacher_style'):
+        return np.concatenate([value.detach().cpu().numpy().ravel() for value in deployment_state(model).values()]).astype('<f4')
     if model.settings.get('kind')=='imu_affine':
         return np.concatenate([model.gain.detach().cpu().numpy(),model.bias.detach().cpu().numpy()]).astype('<f4')
     if model.settings.get('kind')=='visual_imu_affine':
@@ -32,13 +37,24 @@ def ordered_weights(model):
 def write_sources(model,output):
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     s=model.settings
-    if s.get('kind')=='visual_imu_affine' and (s['grid_width'],s['grid_height'],s['hidden'])!=(2,1,0):
+    if s.get('kind')=='visual_imu_affine' and not s.get('micro_cnn') and (s['grid_width'],s['grid_height'],s['hidden'])!=(2,1,0):
         raise ValueError('The native 500 profile requires its 2x1 visual grid and no hidden layer')
+    if s.get('micro_cnn') and (s['hidden']!=0 or min(s['grid_width'],s['grid_height'])<2 or s['grid_width']%2 or s['grid_height']%2):
+        raise ValueError('The tiny CNN requires an even grid and an affine state head')
     weights=ordered_weights(model)
     if not np.isfinite(weights).all():raise ValueError('Student checkpoint contains nonfinite weights')
     (output/'weights.bin').write_bytes(weights.tobytes())
     header=f'''/* Generated float32 weights; C23 #embed is supported by wasi-sdk 34. */
 #define STUDENT_SSM {int(s.get('kind')=='mamba2')}
+#define TEACHER_STYLE {int(bool(s.get('teacher_style')))}
+#define MICRO_FRONTEND {int(s.get('kind')=='visual_imu_affine')}
+#define MICRO_CNN {int(bool(s.get('micro_cnn')))}
+#define EMBEDDING_DIM {s.get('embedding_dim',0)}
+#define PREDICTOR_HIDDEN {s.get('predictor_hidden',0)}
+#define VISION_C1 {s.get('vision_channels',[0,0])[0]}
+#define VISION_C2 {s.get('vision_channels',[0,0])[1]}
+#define VISION_PADDING {s.get('vision_padding',0)}
+#define VISION_SECOND_KERNEL {s.get('vision_second_kernel',1)}
 #define GRID_WIDTH {s['grid_width']}
 #define GRID_HEIGHT {s['grid_height']}
 #define GRID_SIZE {s['grid_width']*s['grid_height']}
@@ -56,11 +72,14 @@ static const union {{ unsigned char bytes[{weights.nbytes}]; float values[{weigh
 #define WEIGHTS student_weights.values
 #endif
 '''
-    if s.get('kind')=='mamba2':
+    if s.get('kind')=='mamba2' or s.get('teacher_style'):
         offsets={};offset=0
-        for name,value in model.state_dict().items():offsets[name]=offset;offset+=value.numel()
+        for name,value in deployment_state(model).items():offsets[name]=offset;offset+=value.numel()
         for name,value in offsets.items():
             header+=f'#define W_{name.upper().replace(".","_")} (WEIGHTS+{value})\n'
+    if s.get('teacher_style'):
+        shutil.copy2(HERE/'native_vision.h',output/'native_vision.h')
+    if s.get('kind')=='mamba2':
         for key,value in dict(LAYERS=s['layers'],D_STATE=s['d_state'],HEADDIM=s['headdim'],
                 ATTENTION_DIM=s['attention_dim'],ATTENTION_HEADS=s['heads'],ATTENTION_WINDOW=s['window']).items():
             header+=f'#define {key} {value}\n'
@@ -70,6 +89,9 @@ static const union {{ unsigned char bytes[{weights.nbytes}]; float values[{weigh
         shutil.copy2(HERE/'native_ssm.h',output/'native_ssm.h')
     (output/'student_weights.h').write_text(header)
     source={'imu_affine':'native_100.c','visual_imu_affine':'native_500.c'}.get(s.get('kind'),'native.c')
+    if s.get('kind')=='visual_imu_affine' and s.get('teacher_style'):
+        if not s.get('micro_cnn') and (s['embedding_dim'],s['predictor_hidden'])!=(1,1):raise ValueError('500-fuel frontend requires scalar embedding/predictor')
+        source='native_1k_orientation.c' if s.get('orientation_head') else 'native_500_frontend.c'
     shutil.copy2(HERE/source,output/'solution.c')
     native=WORKSPACE/'runtime/native'
     (output/'CMakeLists.txt').write_text(f'''cmake_minimum_required(VERSION 3.20)

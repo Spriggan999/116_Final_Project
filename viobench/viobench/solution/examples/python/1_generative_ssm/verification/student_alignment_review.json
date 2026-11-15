@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-15",
+  "scope": "Sim(3)-aligned trajectory RMSE auxiliary for all eight SL students and optional budget distillation.",
+  "default_weight": 0.1,
+  "definition": "Mean per-trajectory sqrt(mean camera-position squared distance after Umeyama fit + 1e-12) - 1e-6.",
+  "fit": "Detached float64 minimizing Umeyama transform; residuals retain gradients.",
+  "safeguards": [
+    "Translation-only fallback for predicted-position variance <= 1e-12 m\u00b2.",
+    "Fewer than three camera samples: zero auxiliary and explicit insufficient-samples diagnostic.",
+    "Existing nonfinite objective check and gradient clipping retained."
+  ],
+  "scope_of_trajectories": "Current training horizon 2/4/8/12/20 seconds, complete generated flights at 20 seconds; diagnostic validation on complete held-out flights.",
+  "camera_calibration": "Camera/IMU lever arm included; common initial-frame rotation preserves distance.",
+  "logging": "Raw loss, coefficient, weighted contribution, scale diagnostics and degenerate/insufficient fractions in W&B and per-profile metrics.jsonl.",
+  "checks": {
+    "cpu_alignment_and_supervised_curriculum": "24 passed, 1 CUDA test deselected",
+    "cuda_alignment_gradient_all_eight_updates_scheduling_and_serial_parallel_equivalence": "5 passed, 16 deselected",
+    "final_cli_with_three_camera_samples_and_stage_recovery": "1 passed, 15 deselected",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "training_entrypoint": "Existing train_students.py multi-profile auto scheduler; documented tmux command in SUPERVISED_STUDENTS_README.md.",
+  "limitations": [
+    "No full training run launched or convergence/accuracy claim.",
+    "Auxiliary weight is a starting value; state/JEPA terms and selection/gating criteria remain active.",
+    "No deployment computation added."
+  ],
+  "source_sha256": {
+    "trajectory_alignment.py": "67fc5b3827292958c7c99d3dab65bb2954bdee5d0c0ea75290cafe40657921c4",
+    "distill.py": "b197d157ca715fade671f857a5709f5db6d63f35778ee3431fc67b19cc7b2846",
+    "tests/test_trajectory_alignment.py": "e891c206b960beaf3bd1adc306afd0fcac02d7448f004ef1bd5b8a8d71b324f1",
+    "tests/test_student_embedding.py": "c5084751c4cabec4ece6028a49b14f550dbc41f481420dee96c7da03bec3692d",
+    "tests/test_distillation_pipeline.py": "498d2c41c281f6483f68d8bfd06c881b46ae5c766c04d05391b8ac8dc7007408",
+    "tests/test_student_supervised.py": "1e68c940c27b815fb7095361b3d3009d640c193d73d58bdd54ebc3638f51b202"
+  }
+}

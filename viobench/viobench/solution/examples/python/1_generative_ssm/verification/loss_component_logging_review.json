@@ -1,0 +1,39 @@
+{
+  "date": "2026-11-15",
+  "scope": "Raw losses, coefficients and weighted contributions across every training objective.",
+  "coverage": [
+    "Budget students: GT position/velocity/rotation/angular velocity; teacher-state counterparts; aggregate and three-group correction KD; all four JEPA terms with effective outer weights.",
+    "Main training: embedding prediction/content/variance/covariance; RGB L1, x/y edges and x/y flow; state SL; optional auxiliary teacher; internal correction KD.",
+    "PPO: actor/value/anchor and their weighted contributions, underlying MSE/divergence, clipped/unclipped surrogate diagnostics and clip fraction; validation state components."
+  ],
+  "aggregation": "Detached sample-weighted means; conversion to scalar logs after aggregation.",
+  "local_files": [
+    "PROFILE/metrics.jsonl",
+    "loss_components.jsonl",
+    "ppo_metrics.jsonl"
+  ],
+  "checks": {
+    "cpu_components_embedding_supervised_initial": "26 passed, 2 CUDA tests deselected",
+    "final_components_and_student_cli_recovery": "8 passed, 15 deselected",
+    "cuda_eight_student_updates_and_scheduling_restore": "2 passed, 3 deselected",
+    "streaming_embedding_and_rgb_sl_ppo_and_ppo_only": "2 passed, 20 deselected",
+    "ppo_gru_frozen_backbone_updates": "2 passed",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "invariance": "Tests reconstruct weighted objective totals and verify unchanged gradients; no objective coefficients, validation criteria or deployment code changed.",
+  "limitations": [
+    "Loss magnitudes do not measure per-term gradient influence or establish optimal coefficients.",
+    "No long training run started or existing history backfilled."
+  ],
+  "source_sha256": {
+    "loss_tracking.py": "35e34b9ce79169a9671a99af9d16eb5d686bab813bdb7a01b6c24d6a3197345a",
+    "losses.py": "1c18656a5b8f5e76ad98143da870f2e9add6c4998ed1d45e1e266edc5ff5b422",
+    "distill.py": "0340829066850661f70bdcfb189ebad4c9e67e81105d34611c6daf8e22dc642e",
+    "embedding_training.py": "c7a17d1437017fb7a00f2aee59f2134a5634f536ad27c1f1d002db0dd37b775f",
+    "train.py": "334b6acccb24df41a5fb4b21504c1f9c2ce4248c58d705880a856d1a979c5b1f",
+    "ppo.py": "0e66fb0c307f45cc47cf4e8809ad5cea85ffb0d8f08c1e893671c884424dfd47",
+    "tests/test_loss_components.py": "1130d9dda7d73de818ef52f94f1de48043916420305a1033bd1fd2974849cae2",
+    "tests/test_student_supervised.py": "66d3b0e60be3e9a2401ab3f2040268d00bff05cc1ee8a228ae0d464afed6b098",
+    "tests/test_streaming_ppo.py": "6aaae85e20fab83a1582ac55d58ee8c9f7cf4da5262d86e10869979c412b06c4"
+  }
+}

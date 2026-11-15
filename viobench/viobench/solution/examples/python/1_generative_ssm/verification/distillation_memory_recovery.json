@@ -1,0 +1,39 @@
+{
+  "problem": "Distiller disabled teacher curriculum, inadvertently disabling token-based batch limits; scheduler aborted without retry.",
+  "fixes": [
+    "Explicit distillation batch limits 8/4/2/1/1",
+    "Exclude allocator cache from external memory accounting",
+    "Retry batch reduction before first production update; optional target-prefetch fallback",
+    "Copy optimizer rollback state before loading to prevent CPU counter aliasing",
+    "Warm-start saved best student weights into a fresh output and W&B run"
+  ],
+  "real_teacher_probe": {
+    "scope": "Two bounded updates per horizon, all seven original saved students, full-resolution real recording, no renderer; initial batch eight deliberately stress-tests fallback.",
+    "windows": [
+      {
+        "window": 801,
+        "updates": 2,
+        "batch_size": 8,
+        "concurrency": 4,
+        "target_prefetch": true
+      },
+      {
+        "window": 4001,
+        "updates": 2,
+        "batch_size": 1,
+        "concurrency": 4,
+        "target_prefetch": true
+      }
+    ]
+  },
+  "previous_run": "checkpoints/distill-20261114-191710-319824",
+  "full_training_restarted": false,
+  "source_sha256": {
+    "distill.py": "9fce297d33eb749384dad8105c84218735cc8adf413fa5caf79505ef3956d925",
+    "distillation_pipeline.py": "2b8b8a39fcd51d7f028d586713ddcca4bd89e87f11a16e86f9e9bd2d21ce2ea4",
+    "streaming.py": "be7c0021d37c3f52d33a3910478983ed8ebb90288fc3a815a3358374b6a2fb54",
+    "tests/test_distillation_memory.py": "0ada526c2710c3f77f85f1d7fc9e2ed99f243fe9d6fdb8a18828ac18f7dc5e09",
+    "tests/test_distillation.py": "6c288296f2797b709d165e4774309634fe5508e6641efe0c629d7bba861c8c24",
+    "tests/test_streaming_ppo.py": "00ea725f5655b190134cda9280fc73e178fd1418e6903d643b156bf81861231c"
+  }
+}

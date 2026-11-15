@@ -8,6 +8,7 @@ import tempfile
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
+from loss_tracking import LossAverages,record_components,weighted_terms,rgb_objective
 
 
 def save_weights(weights, path):
@@ -306,29 +307,22 @@ def run_training(args, cfg, stack):
         for epoch in range(0 if args.ppo_only else cfg.EPOCHS_FRAME):
             train_pair_loader, train_state_loader = data.next_epoch()
             timer=EpochTimer(cfg.DEVICE)
-            frame_student.train();values=[];total_losses=[]
+            frame_student.train();values=[];total_losses=[];train_components=LossAverages();val_components=LossAverages()
             for b in timed_batches(train_pair_loader,timer):
                 previous,anc,tgt=frame_pair_images(b,cfg.DEVICE)
                 generator_kwargs = dict(
                     previous=previous, anchor=anc,
                     imu_mean=b['imu'].to(cfg.DEVICE,non_blocking=True), elapsed=b['elapsed'].to(cfg.DEVICE,non_blocking=True),
                     prev_elapsed=b['prev_elapsed'].to(cfg.DEVICE,non_blocking=True))
+                aux={}
                 if cfg.USE_GENERATIVE_FRAME_MODEL and cfg.USE_FLOW_SMOOTHNESS_LOSS:
                     pred, aux = frame_student(**generator_kwargs, return_aux=True)
                 else:
                     pred = frame_student(**generator_kwargs)
                 l1 = F.l1_loss(pred, tgt)
                 data.observe_errors(b,(pred.detach()-tgt).abs().mean((1,2,3)))
-                loss = l1
-                if cfg.USE_FRAME_EDGE_LOSS:
-                    dx = (pred[:,:,:,1:] - pred[:,:,:,:-1]) - (tgt[:,:,:,1:] - tgt[:,:,:,:-1])
-                    dy = (pred[:,:,1:,:] - pred[:,:,:-1,:]) - (tgt[:,:,1:,:] - tgt[:,:,:-1,:])
-                    loss = loss + cfg.FRAME_EDGE_LOSS_WEIGHT*(dx.abs().mean()+dy.abs().mean())
-                if cfg.USE_GENERATIVE_FRAME_MODEL and cfg.USE_FLOW_SMOOTHNESS_LOSS:
-                    flow = aux['flow_pixels']
-                    smooth_x = (flow[:,:,:,1:]-flow[:,:,:,:-1]).abs().mean()
-                    smooth_y = (flow[:,:,1:,:]-flow[:,:,:-1,:]).abs().mean()
-                    loss = loss + cfg.FRAME_FLOW_SMOOTHNESS_WEIGHT*(smooth_x+smooth_y)
+                loss,parts=rgb_objective(pred,tgt,cfg,aux.get('flow_pixels'))
+                train_components.update(parts,len(tgt))
                 frame_opt.zero_grad(set_to_none=True);loss.backward()
                 nn.utils.clip_grad_norm_(frame_student.parameters(),1.)
                 frame_opt.step()
@@ -342,7 +336,12 @@ def run_training(args, cfg, stack):
                     previous,anchor,tgt=frame_pair_images(b,cfg.DEVICE)
                     p=frame_student(previous,anchor,
                                     b['imu'].to(cfg.DEVICE,non_blocking=True),b['elapsed'].to(cfg.DEVICE,non_blocking=True),
-                                    b['prev_elapsed'].to(cfg.DEVICE,non_blocking=True))
+                                    b['prev_elapsed'].to(cfg.DEVICE,non_blocking=True),
+                                    **({'return_aux':True} if cfg.USE_GENERATIVE_FRAME_MODEL and cfg.USE_FLOW_SMOOTHNESS_LOSS else {}))
+                    aux={}
+                    if cfg.USE_GENERATIVE_FRAME_MODEL and cfg.USE_FLOW_SMOOTHNESS_LOSS:p,aux=p
+                    _,parts=rgb_objective(p,tgt,cfg,aux.get('flow_pixels'))
+                    val_components.update(parts,len(tgt))
                     n=tgt.shape[0]
                     vals.append(F.l1_loss(p,tgt).item()*n)
                     val_mse.append(F.mse_loss(p,tgt).item()*n)
@@ -368,7 +367,8 @@ def run_training(args, cfg, stack):
                 best_frame=val_l1;bad_frame_epochs=0;best_frame_epoch=epoch+1
                 save_weights(frame_student.state_dict(),cfg.FRAME_CHECKPOINT)
             bad_frame_epochs=data.update_patience(frame_patience,improved,promoted)
-            run.log({'frame/train_l1':train_l1,'frame/train_total':float(torch.stack(total_losses).sum()/performance['samples']),'frame/val_l1':val_l1,
+            component_logs=record_components(args.out,'frame',epoch+1,train_components,val_components)
+            run.log(component_logs|{'frame/train_l1':train_l1,'frame/train_total':float(torch.stack(total_losses).sum()/performance['samples']),'frame/val_l1':val_l1,
                      'frame/train_pairs_per_second':performance['samples_per_second'],
                      'frame/val_psnr_db':val_psnr,'frame/val_mse':mean_mse,
                      'frame/lr':frame_opt.param_groups[0]['lr'],'frame/epoch':epoch+1,
@@ -508,12 +508,13 @@ def run_training(args, cfg, stack):
     for epoch in range(0 if args.ppo_only else cfg.EPOCHS_STUDENT):
         train_pair_loader, train_state_loader = data.next_epoch()
         timer=EpochTimer(cfg.DEVICE)
-        student.train();tr=[]
+        student.train();tr=[];train_components=LossAverages();val_components=LossAverages()
         for b in timed_batches(train_state_loader,timer):
             frames=state_input_frames(frame_student,b,cfg.DEVICE)
             pred=student(frames,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                          b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
-            loss,_=losses(pred,b,cfg.DEVICE,metrics=False)
+            loss,parts=losses(pred,b,cfg.DEVICE,metrics=False,components=True)
+            train_components.update(parts,len(frames))
             data.observe_prediction(b,pred)
             state_opt.zero_grad(set_to_none=True);loss.backward()
             nn.utils.clip_grad_norm_(student.parameters(),1.)
@@ -527,7 +528,8 @@ def run_training(args, cfg, stack):
                 frames=state_input_frames(frame_student,b,cfg.DEVICE)
                 p=student(frames,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                           b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
-                loss,m=losses(p,b,cfg.DEVICE)
+                loss,m=losses(p,b,cfg.DEVICE,components=True)
+                val_components.update({key:value for key,value in m.items() if key.endswith(('_raw','_weight','_weighted'))},len(frames))
                 ate.update(p,b)
                 n=len(frames);ev.append(loss.detach()*n);validation_count+=n;metrics.append((m,n))
         train_loss=float(torch.stack(tr).sum()/performance['samples']);val_loss=float(torch.stack(ev).sum()/validation_count)
@@ -556,6 +558,7 @@ def run_training(args, cfg, stack):
         for k in metrics[0][0]:
             value=sum((m[k]**2 if k.endswith('rmse') else m[k])*n for m,n in metrics)/validation_count
             logs['student/val_'+k]=float(np.sqrt(value) if k.endswith('rmse') else value)
+        logs.update(record_components(args.out,'student',epoch+1,train_components,val_components))
         run.log(logs)
         print(f'Student {epoch+1}/{cfg.EPOCHS_STUDENT}: train={train_loss:.5f} '
               f'val={val_loss:.5f}, position RMSE={logs["student/val_pos_rmse"]:.4f} m, '
@@ -596,12 +599,13 @@ def run_training(args, cfg, stack):
         for epoch in range(cfg.EPOCHS_TEACHER):
             train_pair_loader, train_state_loader = data.next_epoch()
             timer=EpochTimer(cfg.DEVICE)
-            teacher.train();tl=[];train_count=0
+            teacher.train();tl=[];train_count=0;train_components=LossAverages();val_components=LossAverages()
             for b in timed_batches(train_state_loader,timer):
                 frames=state_input_frames(frame_student,b,cfg.DEVICE)
                 pred=teacher(frames,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                              b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
-                loss,_=losses(pred,b,cfg.DEVICE,metrics=False)
+                loss,parts=losses(pred,b,cfg.DEVICE,metrics=False,components=True)
+                train_components.update(parts,len(frames))
                 data.observe_prediction(b,pred)
                 opt.zero_grad(set_to_none=True);loss.backward()
                 nn.utils.clip_grad_norm_(teacher.parameters(),1.)
@@ -613,7 +617,8 @@ def run_training(args, cfg, stack):
                     f=state_input_frames(frame_student,b,cfg.DEVICE)
                     p=teacher(f,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                               b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
-                    n=len(b['imu']);vl.append(losses(p,b,cfg.DEVICE,metrics=False)[0].detach()*n);val_count+=n
+                    n=len(b['imu']);val_loss,parts=losses(p,b,cfg.DEVICE,metrics=False,components=True)
+                    vl.append(val_loss.detach()*n);val_count+=n;val_components.update(parts,n)
                     ate.update(p,b)
             mean_train=float(torch.stack(tl).sum()/train_count);mean_val=float(torch.stack(vl).sum()/val_count)
             trajectory_metrics=finish_ate(frame_student,teacher,cfg.DEVICE,ate,data.val_episode_loader)
@@ -629,7 +634,8 @@ def run_training(args, cfg, stack):
                      'teacher/epoch':epoch+1,'teacher/lr':opt.param_groups[0]['lr'],
                      'teacher/best_val_loss':best,'teacher/non_improving_data_cycles':bad_teacher_epochs,
                      'teacher/early_stopping_grace_remaining':teacher_patience.grace_remaining}|
-                    {'teacher/val_'+k:v for k,v in trajectory_metrics.items()}|data.curriculum_log()|pipeline_log(performance))
+                    {'teacher/val_'+k:v for k,v in trajectory_metrics.items()}|data.curriculum_log()|pipeline_log(performance)|
+                    record_components(args.out,'teacher',epoch+1,train_components,val_components))
             print(f'Teacher {epoch+1}/{cfg.EPOCHS_TEACHER}: {mean_train:.5f}/{mean_val:.5f}')
             if bad_teacher_epochs>=cfg.PATIENCE_TEACHER:
                 print('Teacher early stopped; best epoch:',best_teacher_epoch)
@@ -655,17 +661,22 @@ def run_training(args, cfg, stack):
         for epoch in range(cfg.EPOCHS_DISTILL):
             train_pair_loader, train_state_loader = data.next_epoch()
             timer=EpochTimer(cfg.DEVICE)
-            student.train();tr=[];train_count=0
+            student.train();tr=[];train_count=0;train_components=LossAverages();val_components=LossAverages()
             for b in timed_batches(train_state_loader,timer):
                 frames=state_input_frames(frame_student,b,cfg.DEVICE)
                 imu=b['imu'].to(cfg.DEVICE,non_blocking=True); obs=b['observed'].to(cfg.DEVICE,non_blocking=True)
                 dt=b['dt'].to(cfg.DEVICE,non_blocking=True);grav=b['gravity'].to(cfg.DEVICE,non_blocking=True)
                 with torch.no_grad(),amp_disabled():target=teacher(frames,imu,obs,dt,grav)
                 pred=student(frames,imu,obs,dt,grav,return_corrections=True)
-                gt_loss,_=losses(pred,b,cfg.DEVICE,metrics=False)
+                gt_loss,parts=losses(pred,b,cfg.DEVICE,metrics=False,components=True)
                 data.observe_prediction(b,pred)
                 kd=F.smooth_l1_loss(pred['corrections'],target['corrections'])
                 loss=gt_loss+0.2*kd
+                kd_parts=parts|weighted_terms(dict(correction_kd=kd),dict(correction_kd=.2))
+                for index,group in enumerate(('gyro','body_acceleration','world_acceleration')):
+                    value=F.smooth_l1_loss(pred['corrections'][...,index*3:index*3+3],target['corrections'][...,index*3:index*3+3])
+                    kd_parts.update(weighted_terms({group:value},{group:.2/3},prefix='kd_'))
+                train_components.update(kd_parts,len(frames))
                 opt.zero_grad(set_to_none=True);loss.backward()
                 nn.utils.clip_grad_norm_(student.parameters(),1.)
                 opt.step();n=len(frames);tr.append(loss.detach()*n);train_count+=n;timer.add(n)
@@ -676,7 +687,8 @@ def run_training(args, cfg, stack):
                     frames=state_input_frames(frame_student,b,cfg.DEVICE)
                     p=student(frames,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                               b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
-                    n=len(b['imu']);vl.append(losses(p,b,cfg.DEVICE,metrics=False)[0].detach()*n);val_count+=n
+                    n=len(b['imu']);val_loss,parts=losses(p,b,cfg.DEVICE,metrics=False,components=True)
+                    vl.append(val_loss.detach()*n);val_count+=n;val_components.update(parts,n)
                     ate.update(p,b)
             val=float(torch.stack(vl).sum()/val_count)
             trajectory_metrics=finish_ate(frame_student,student,cfg.DEVICE,ate,data.val_episode_loader)
@@ -693,7 +705,8 @@ def run_training(args, cfg, stack):
                      'distill/best_val_loss':best_distill,
                      'distill/non_improving_data_cycles':bad_distill_epochs,
                      'distill/early_stopping_grace_remaining':distill_patience.grace_remaining}|
-                    {'distill/val_'+k:v for k,v in trajectory_metrics.items()}|data.curriculum_log()|pipeline_log(performance))
+                    {'distill/val_'+k:v for k,v in trajectory_metrics.items()}|data.curriculum_log()|pipeline_log(performance)|
+                    record_components(args.out,'distill',epoch+1,train_components,val_components))
             print(f'Distill {epoch+1}/{cfg.EPOCHS_DISTILL}: train={float(torch.stack(tr).sum()/train_count):.5f}, val={val:.5f}')
             if bad_distill_epochs>=cfg.PATIENCE_DISTILL:
                 print('Distillation early stopped; best epoch:',best_distill_epoch)

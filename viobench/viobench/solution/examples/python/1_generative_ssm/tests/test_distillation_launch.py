@@ -13,7 +13,7 @@ from distillation_pipeline import scheduling_candidates
 
 
 def test_schedule_search_includes_serial_parallel_and_heavy_student_isolation():
-    names=['500','10k','1m','100m','1m_ssm','1m_hybrid','100m_hybrid']
+    names=['1k','10k','1m','100m','1m_ssm','1m_hybrid','100m_hybrid']
     costs={name:i+1 for i,name in enumerate(names)}
     costs['100m']=100
     plans=scheduling_candidates(names,costs)
@@ -33,15 +33,16 @@ def test_cuda_autotune_selects_fastest_safe_plan_and_restores_all_students():
     from students.model import BudgetStudent,PROFILES
     from distill import train_student
     from distillation_pipeline import DistillationPipeline
+    from gpu_collection import GpuCollectionGate
     from test_distillation_pipeline import payload
     torch.set_num_threads(1);torch.manual_seed(17)
     students={}
-    for name in ('500','10k','1m'):
+    for name in ('1k','10k','1m'):
         model=BudgetStudent(PROFILES[name]).cuda()
         students[name]=dict(model=model,optimizer=torch.optim.AdamW(model.parameters(),lr=3e-4))
     original={name:deepcopy(row['model'].state_dict()) for name,row in students.items()}
     source=payload('cuda');rng=torch.cuda.get_rng_state()
-    with DistillationPipeline('cuda',students) as pipeline:
+    with DistillationPipeline('cuda',students,gpu_gate=GpuCollectionGate('cuda')) as pipeline:
         with pipeline.batches([source],lambda batch:batch) as batches:
             result=pipeline.autotune(students,next(batches),partial(train_student,device='cuda',weights=(1.,.5,1.)))
         best=min((row for row in result['candidates'] if row['safe']),key=lambda row:row['seconds'])

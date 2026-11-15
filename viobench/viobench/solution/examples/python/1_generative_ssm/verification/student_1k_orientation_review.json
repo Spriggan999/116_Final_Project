@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-15",
+  "profile": "1k",
+  "parameters": 82,
+  "export_fuel_cap": 1100,
+  "architecture": {
+    "vision": "4x4 gray, 2 shared 2x2 stride-2 CNN filters, projected to 2D",
+    "embedding_predictor": [
+      11,
+      2,
+      2
+    ],
+    "state": "learned accelerometer and gyro gain/bias plus separate 4-to-3 latent/innovation heads",
+    "orientation": "normalized first-order quaternion integration at 20 Hz",
+    "imu": "last 3-axis accelerometer and 3-axis gyro sample per frame",
+    "cuda": "associative quaternion prefix plus parallel cumulative translation",
+    "output": "13D pose/twist with camera rotation and lever arm calibration"
+  },
+  "resource_check": {
+    "module": "/tmp/hyperdrone-1k-orientation-final-h13caeih/student.wasm",
+    "module_sha256": "664487c696169e98a4dd31b70f6b9bece79cf47dfffd3ecac36c4d9db79535cb",
+    "bytes": 25666,
+    "frames_requested": 1200,
+    "frames_completed": 1200,
+    "simulated_duration_seconds": 60.0,
+    "limits": {
+      "init_fuel": 200000000000,
+      "step_fuel": 1100,
+      "memory_bytes": 2147483648,
+      "table_elements": 1048576,
+      "init_wall_seconds": 300.0,
+      "step_wall_seconds": 60.0
+    },
+    "max_upload_bytes": 134217728,
+    "episode_timeout_seconds": 1440,
+    "passed": true,
+    "fuel_step_max": 1031,
+    "wall_step_seconds_max": 0.00017080199904739857,
+    "memory_bytes_observed_max": 67108864,
+    "width": 320,
+    "height": 240,
+    "fuel_init": 12120,
+    "wall_init_seconds_reported": 5.5065989727154374e-05,
+    "elapsed_seconds": 1.5320431599975564,
+    "profile_kind": "student resource check; not an accuracy evaluation",
+    "weights_sha256": "54e7d5e7ce74a79f965a73417d0b895c3be09e285350d39a5751f0d176f86cb4"
+  },
+  "checks": {
+    "cpu_native_wasm_learning_compatibility_cli_launcher": "11 passed, 34 deselected",
+    "cuda_full_20_second_parallel_vs_sequential_and_gradients": "1 passed, 28 deselected",
+    "static": "git diff --check and pyflakes passed"
+  },
+  "compatibility": "Old fixed-attitude 1K/500 checkpoints retain their saved layouts and native kernels. New orientation model requires fresh training.",
+  "limitations": [
+    "Resource check uses perturbed untrained weights, not a trained accuracy evaluation.",
+    "No long training run launched."
+  ],
+  "source_sha256": {
+    "students/model.py": "64631568e74ce117e67599d69e540ec4691aeae6c1dda9dd3390e3eaae6c6457",
+    "students/export.py": "6b437e133ab4858ee747673daa7d8ebb4cc15ec5db45eb6ccaaf3aa4630e8638",
+    "students/native_1k_orientation.c": "0dc1afc3202505c266d58ed67d7bef817f1d345be7b8cd5d83306222eb29c530",
+    "tests/test_student_frontends.py": "37cf81098adbbc953d53c9de768e3a7fb939566c18d7ff6ec3650bb4328b8721"
+  }
+}

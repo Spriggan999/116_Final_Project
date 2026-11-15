@@ -1,10 +1,39 @@
 """Bounded teacher prefetch and independent student CUDA streams."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager,nullcontext
 from copy import deepcopy
+from functools import wraps
 import time
 
 import torch
+
+
+def gpu_operation(function):
+    @wraps(function)
+    def guarded(self,*args,**kwargs):
+        with self.gpu_work():return function(self,*args,**kwargs)
+    return guarded
+
+
+class ScheduleMemoryError(RuntimeError):
+    """Every reversible scheduling probe exceeded the memory budget."""
+    def __init__(self, candidates):
+        super().__init__('No distillation schedule leaves 15% VRAM headroom')
+        self.candidates = candidates
+
+
+def memory_headroom(total, free, allocated, reserved, peak, headroom=.15):
+    """Allocator reservations already include live tensors and cached blocks.
+
+    Only allocations outside PyTorch belong on top of its allocation peak.
+    Also check current device usage, including non-releasable cached blocks.
+    """
+    used = total-free
+    external = max(0, used-reserved)
+    estimated = max(used, peak+external)
+    return dict(peak_allocated_mib=peak/2**20, estimated_peak_total_mib=estimated/2**20,
+                free_mib=free/2**20, reserved_mib=reserved/2**20,
+                allocated_mib=allocated/2**20, safe=estimated<=(1-headroom)*total)
 
 
 def scheduling_candidates(names,costs):
@@ -87,7 +116,7 @@ class DistillationPipeline:
     Each step joins all student updates before advancing, so one model never
     has concurrent optimizer steps. Only read-only inputs/targets are shared.
     """
-    def __init__(self, device, profiles, parallel=True, max_concurrent=None):
+    def __init__(self, device, profiles, parallel=True, max_concurrent=None, target_prefetch=True,gpu_gate=None):
         self.device = torch.device(device)
         self.parallel = parallel and self.device.type == 'cuda'
         self.profiles = tuple(profiles)
@@ -97,6 +126,11 @@ class DistillationPipeline:
         self.groups=None
         self.serial_students=False
         self.tuning=[]
+        self.target_prefetch=target_prefetch
+        self.gpu_gate=gpu_gate
+
+    def gpu_work(self):
+        return self.gpu_gate.training() if self.gpu_gate is not None and self.device.type=='cuda' else nullcontext()
 
     def __enter__(self):
         if self.parallel:
@@ -114,19 +148,30 @@ class DistillationPipeline:
     @contextmanager
     def batches(self, loader, prepare):
         if not self.parallel:
-            yield ((prepare(batch), None) for batch in loader)
+            def serial(batch):
+                with self.gpu_work():return prepare(batch),None
+            yield (serial(batch) for batch in loader)
             return
 
         def produce(batch):
-            with torch.cuda.device(self.device), torch.cuda.stream(self.teacher_stream), torch.no_grad():
+            with self.gpu_work(),torch.cuda.device(self.device), torch.cuda.stream(self.teacher_stream), torch.no_grad():
                 payload = prepare(batch)
                 ready = torch.cuda.Event()
                 ready.record(self.teacher_stream)
                 return payload, ready
 
-        with prefetched_batches(loader, produce, self.pool) as batches:
-            yield batches
+        if self.target_prefetch:
+            with prefetched_batches(loader, produce, self.pool) as batches:
+                try:yield batches
+                except (KeyboardInterrupt,SystemExit):
+                    if self.gpu_gate is not None:self.gpu_gate.cancel()
+                    raise
+        else:
+            # Keep independent student streams while avoiding simultaneous
+            # teacher preparation and student activation allocations.
+            yield (produce(batch) for batch in loader)
 
+    @gpu_operation
     def run(self, active, prepared, operation):
         payload, ready = prepared
         if not self.parallel or self.serial_students:
@@ -148,7 +193,12 @@ class DistillationPipeline:
                 return float(result)
 
         names=list(active);results={}
-        groups=self.groups or [names[start:start+self.max_concurrent] for start in range(0,len(names),self.max_concurrent)]
+        groups=list(self.groups) if self.groups else []
+        covered={name for group in groups for name in group}
+        missing=[name for name in names if name not in covered]
+        # Tuning can exclude paused models, while validation and later resumed
+        # updates include them again. Every requested model must still run.
+        groups.extend(missing[start:start+self.max_concurrent] for start in range(0,len(missing),self.max_concurrent))
         for group in groups:
             futures={name:self.pool.submit(work,name,active[name]) for name in group if name in active}
             errors=[]
@@ -159,6 +209,7 @@ class DistillationPipeline:
             if errors:raise errors[0]
         return results
 
+    @gpu_operation
     def autotune(self,active,prepared,operation,headroom=.15):
         """Probe real updates, then restore weights/optimizer/RNG exactly.
 
@@ -184,7 +235,10 @@ class DistillationPipeline:
             for name,row in active.items():
                 weights,optimizer,training=snapshots[name]
                 row['optimizer'].zero_grad(set_to_none=True)
-                row['model'].load_state_dict(weights);row['optimizer'].load_state_dict(optimizer)
+                row['model'].load_state_dict(weights)
+                # Optimizer loading can retain CPU step-counter tensors by
+                # reference. Probes must never mutate the saved rollback state.
+                row['optimizer'].load_state_dict(cpu_copy(optimizer))
                 row['model'].train(training)
             torch.set_rng_state(rng);torch.cuda.set_rng_state(cuda_rng,self.device)
             torch.cuda.empty_cache()
@@ -195,6 +249,8 @@ class DistillationPipeline:
                     self.run({name:row},prepared,operation)
                     start=time.perf_counter();self.run({name:row},prepared,operation)
                     costs[name]=time.perf_counter()-start
+                except torch.OutOfMemoryError:
+                    raise ScheduleMemoryError([dict(profile=name,safe=False,error='CUDA out of memory')]) from None
                 finally:restore()
             for plan in scheduling_candidates(active,costs):
                 try:
@@ -208,15 +264,14 @@ class DistillationPipeline:
                     torch.cuda.empty_cache()
                     free,total=torch.cuda.mem_get_info(self.device)
                     peak=torch.cuda.max_memory_allocated(self.device)
-                    external=max(0,total-free-torch.cuda.memory_allocated(self.device))
                     candidates.append(dict(plan,seconds=elapsed,
-                        peak_allocated_mib=peak/2**20,estimated_peak_total_mib=(peak+external)/2**20,
-                        free_mib=free/2**20,safe=peak+external<=(1-headroom)*total))
+                        **memory_headroom(total,free,torch.cuda.memory_allocated(self.device),
+                                          torch.cuda.memory_reserved(self.device),peak,headroom)))
                 except torch.OutOfMemoryError:
                     candidates.append(dict(plan,safe=False,error='CUDA out of memory'))
                 finally:restore()
             safe=[row for row in candidates if row['safe']]
-            if not safe:raise RuntimeError('No distillation schedule leaves 15% VRAM headroom; reduce --batch or recording concurrency')
+            if not safe:raise ScheduleMemoryError(candidates)
             best=min(safe,key=lambda row:row['seconds'])
             self.max_concurrent=best['max_concurrent'];self.groups=best['groups']
             self.serial_students=best['mode']=='serial_students';selected=True

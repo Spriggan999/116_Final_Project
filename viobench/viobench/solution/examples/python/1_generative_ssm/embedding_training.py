@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from performance import EpochTimer,adamw,amp_disabled,record_epoch,timed_batches,pipeline_log
 from data import frame_pair_images
 from streaming import FreshBatchPatience
+from loss_tracking import LossAverages,embedding_terms,record_components
 
 
 def embedding_objective(model,batch,config,return_errors=False):
@@ -57,9 +58,10 @@ def train_embeddings(model,data,args,config,save_weights):
         for epoch in range(0 if args.ppo_only else config.EPOCHS_FRAME):
             loader,_=data.next_epoch()
             timer=EpochTimer(config.DEVICE)
-            model.train();train=[]
+            model.train();train=[];train_components=LossAverages();val_components=LossAverages()
             for batch in timed_batches(loader,timer):
-                loss,_,errors=embedding_objective(model,batch,config,return_errors=True)
+                loss,parts,errors=embedding_objective(model,batch,config,return_errors=True)
+                train_components.update(embedding_terms(parts,config.EMBEDDING_VARIANCE_WEIGHT,config.EMBEDDING_COVARIANCE_WEIGHT),len(batch['anchor']))
                 data.observe_errors(batch,errors)
                 if not torch.isfinite(loss):raise ValueError('Nonfinite embedding training loss')
                 optimizer.zero_grad(set_to_none=True);loss.backward()
@@ -73,6 +75,7 @@ def train_embeddings(model,data,args,config,save_weights):
                 for batch in data.val_pair_loader:
                     loss,metrics=embedding_objective(model,batch,config)
                     count=len(batch['anchor']);counts+=count;validation.append(loss*count)
+                    val_components.update(embedding_terms(metrics,config.EMBEDDING_VARIANCE_WEIGHT,config.EMBEDDING_COVARIANCE_WEIGHT),count)
                     for key,value in metrics.items():terms[key]=terms.get(key,0)+value*count
             score=float(torch.stack(validation).sum()/counts)
             if not torch.isfinite(torch.tensor(score)):raise ValueError('Nonfinite embedding validation loss')
@@ -91,7 +94,8 @@ def train_embeddings(model,data,args,config,save_weights):
                         **{'validation_'+key:float(value/counts) for key,value in terms.items()})
             import json
             with (args.out/'embedding_metrics.jsonl').open('a') as stream:stream.write(json.dumps(record)+'\n')
-            run.log({'embedding/'+key:value for key,value in record.items()}|data.curriculum_log()|pipeline_log(measurement))
+            run.log({'embedding/'+key:value for key,value in record.items()}|data.curriculum_log()|pipeline_log(measurement)|
+                    record_components(args.out,'embedding',epoch+1,train_components,val_components))
             print(f'Embedding {epoch+1}/{config.EPOCHS_FRAME}: train={record["train_loss"]:.6g}, '
                   f'val={score:.6g}; {measurement["samples_per_second"]:.2f} pairs/s',flush=True)
             if bad>=config.PATIENCE_FRAME:break

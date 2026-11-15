@@ -1,0 +1,33 @@
+{
+  "scene_catalog": "procthor",
+  "training_scene_indices": [
+    0,
+    191
+  ],
+  "training_scenes": 192,
+  "validation_scene_indices": [
+    192,
+    199
+  ],
+  "validation_scenes": 8,
+  "hssd_used": false,
+  "full_hssd_validation_changes_removed": true,
+  "model_order": [
+    "500",
+    "10k",
+    "1m_ssm",
+    "1m_hybrid",
+    "1m",
+    "100m_hybrid",
+    "100m"
+  ],
+  "order_basis": "previous measured deployed maximum fuel per frame",
+  "tests": "13 supervised/preset/launcher tests passed; bash -n, pyflakes, git diff --check passed",
+  "new_training_started": false,
+  "source_sha256": {
+    "supervised_procthor.json": "0949f77d7789deff878b1ae8e002730d94e76ea3e734e7c09ac2c26a4198a85f",
+    "train_students.py": "5751ae2f451288e404988b2b4901f8f54157ae8201f9e5e16117f296100f0db7",
+    "train_students_sequential.sh": "0adf2afb9333c33b0d4aa6b0ae6a974e2abc0736fd8a92f54fbc866120595633",
+    "tests/test_student_supervised.py": "32a622607df56d5be779a6d35f7d8d0f913b8eb71db76d33c7826e3470ba8037"
+  }
+}
