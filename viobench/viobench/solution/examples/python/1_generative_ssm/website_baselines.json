@@ -1,0 +1,14 @@
+{
+  "provenance": "User-supplied VIOBench website table, 2026-11-14. Episode hashes and live evaluation settings were not supplied; local comparisons are approximate.",
+  "evaluation_hashes": null,
+  "points": [
+    {"label": "cpp_minimal", "fuel_per_frame_max": 113, "sim3_ate_rmse_mean": 2.695243472068691},
+    {"label": "vins_mono", "fuel_per_frame_max": 1883775164, "sim3_ate_rmse_mean": 0.5062945507665002},
+    {"label": "tiny_cnn", "fuel_per_frame_max": 14684708, "sim3_ate_rmse_mean": 0.6684122639764059},
+    {"label": "orbslam3", "fuel_per_frame_max": 4531834998, "sim3_ate_rmse_mean": 1.7382295663956566},
+    {"label": "openvins", "fuel_per_frame_max": 3867211576, "sim3_ate_rmse_mean": 0.4954516788001665},
+    {"label": "python_minimal", "fuel_per_frame_max": 212230, "sim3_ate_rmse_mean": 2.695243472068691},
+    {"label": "klt_imu", "fuel_per_frame_max": 289275943, "sim3_ate_rmse_mean": 1.8522170531057802},
+    {"label": "dead_reckoning", "fuel_per_frame_max": 4221379, "sim3_ate_rmse_mean": 1.9354894729646535}
+  ]
+}

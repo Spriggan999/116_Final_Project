@@ -15,16 +15,21 @@ import torch
 HERE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(HERE));sys.path.insert(0,str(HERE.parents[4]))
 from students.model import BudgetStudent,PROFILES,camera_frames,integrate,qmatrix
-from students.export import WORKSPACE,write_sources,ordered_weights,export_student
+from students.export import WORKSPACE,write_sources,ordered_weights,export_student,build
 from viobench.tools.abi.config import default_guest_config
 from viobench.tools.geometry import matrix_to_quaternion
 
 
-@pytest.mark.parametrize('profile',[name for name in PROFILES if name!='100'])
+@pytest.mark.parametrize('profile',[name for name,spec in PROFILES.items() if spec.get('kind') not in ('imu_affine','visual_imu_affine')])
 def test_native_math_matches_torch_with_extrinsics_and_lever_arm(tmp_path,profile):
     if not shutil.which('cc'):pytest.skip('host C compiler not installed')
+    if PROFILES[profile].get('kind')=='mamba2' and not torch.cuda.is_available():pytest.skip('official Mamba-2 needs CUDA')
     torch.set_num_threads(1);torch.manual_seed(17)
     student=BudgetStudent(PROFILES[profile]).eval()
+    device='cpu'
+    if student.is_ssm:
+        if not torch.cuda.is_available():pytest.skip('official Mamba-2 needs CUDA')
+        device='cuda';student.to(device)
     output=write_sources(student,tmp_path/'native')
     lib=output/'student.so'
     subprocess.run(['cc','-std=c11','-O2','-DSTUDENT_HOST','-shared','-fPIC',
@@ -37,12 +42,18 @@ def test_native_math_matches_torch_with_extrinsics_and_lever_arm(tmp_path,profil
     weights=ordered_weights(student);native.student_set_weights(weights.ctypes.data_as(fp))
     config=default_guest_config();config['T_cam_imu'][0][3]=.12;config['T_cam_imu'][1][3]=-.04
     encoded=json.dumps(config).encode();assert native.init(encoded,len(encoded)) == 0
+    sandbox=None
+    if (WORKSPACE/'build/toolchain/wasi-sdk/bin/clang').is_file():
+        from viobench import Sandbox,Limits
+        sandbox=Sandbox(build(student,tmp_path/'wasm'),limits=Limits(step_fuel=PROFILES[profile]['fuel']))
+        sandbox.init(config)
     Rci=np.asarray(config['T_cam_imu'])[:3,:3]
     lever=-Rci.T@np.asarray(config['T_cam_imu'])[:3,3]
     rng=np.random.default_rng(17)
     p=torch.zeros(1,3,dtype=torch.float64);v=p.clone();q=torch.tensor([[0.,0.,0.,1.]],dtype=torch.float64)
     hidden=torch.zeros(1,student.settings['hidden']);previous=None;gravity=None
-    for k in range(7):
+    replay=[]
+    for k in range(20):
         frame=rng.integers(0,256,(240,320,3),dtype=np.uint8)
         imu=np.column_stack([k*.05+np.arange(1,11)*.005,
             rng.normal(0,.1,(10,3))+[0,0,9.81],rng.normal(0,.1,(10,3))]).astype(np.float64)
@@ -54,7 +65,8 @@ def test_native_math_matches_torch_with_extrinsics_and_lever_arm(tmp_path,profil
             gray=student.image_features(image)[:,0]
             if previous is None:previous=gray
             features=torch.cat([gray,gray-previous,(mean/10).float()[None],torch.tensor([[1. if k else 0.]])],-1)
-            correction,hidden=student.update(features,hidden)
+            correction,hidden=student.update(features.to(device),hidden)
+            correction=correction.cpu()
             previous=gray
             if k:
                 if student.settings['aggregate']:
@@ -73,11 +85,19 @@ def test_native_math_matches_torch_with_extrinsics_and_lever_arm(tmp_path,profil
         assert native.step((k+1)*.05,frame.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
             imu.ctypes.data_as(dp),10,actual.ctypes.data_as(dp)) == 0
         np.testing.assert_allclose(actual,expected,atol=3e-6,rtol=3e-5)
+        if sandbox is not None:
+            result=sandbox.step((k+1)*.05,frame,imu)
+            np.testing.assert_allclose(np.concatenate([result.pose,result.twist]),expected,atol=3e-6,rtol=3e-5)
+        if k<2:replay.append((frame.copy(),imu.copy(),actual.copy()))
         np.testing.assert_allclose(np.linalg.norm(actual[3:7]),1,atol=1e-12)
     # Empty IMU is allowed; the existing physical pose and velocity remain finite.
-    assert native.step(.4,frame.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+    assert native.step(1.05,frame.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
         imu.ctypes.data_as(dp),0,actual.ctypes.data_as(dp)) == 0
     assert np.isfinite(actual).all()
+    assert native.init(encoded,len(encoded))==0
+    for k,(frame,imu,expected) in enumerate(replay):
+        assert native.step((k+1)*.05,frame.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),imu.ctypes.data_as(dp),10,actual.ctypes.data_as(dp))==0
+        np.testing.assert_allclose(actual,expected,atol=0,rtol=0)
 
 
 def test_student_export_rejects_over_budget_candidate(tmp_path):
@@ -92,7 +112,7 @@ def test_student_export_rejects_over_budget_candidate(tmp_path):
 
 def test_literal_100_fuel_student_is_sensor_aware_image_free_and_calibrated(tmp_path):
     if not shutil.which('cc'):pytest.skip('host C compiler missing')
-    model=BudgetStudent(dict(PROFILES['100'],profile='100')).eval()
+    model=BudgetStudent(dict(fuel=100,grid_width=0,grid_height=0,hidden=0,aggregate=True,kind='imu_affine',profile='100')).eval()
     with torch.no_grad():
         model.gain.copy_(torch.tensor([.913,1.037,1.081]));model.bias.copy_(torch.tensor([.013,-.007,-9.67]))
     output=write_sources(model,tmp_path/'native');lib=output/'student.so'
@@ -110,6 +130,10 @@ def test_literal_100_fuel_student_is_sensor_aware_image_free_and_calibrated(tmp_
     config['T_cam_imu']=np.eye(4).tolist()
     for i in range(3):config['T_cam_imu'][i][:3]=Rci[i].tolist()
     encoded=json.dumps(config).encode();assert native.init(encoded,len(encoded))==0
+    initial=np.zeros(13,np.float64)
+    assert native.step(0.,None,None,0,initial.ctypes.data_as(dp))==0
+    np.testing.assert_array_equal(initial,[0,0,0,0,0,0,1,0,0,0,0,0,0])
+    assert native.init(encoded,len(encoded))==0
     rng=np.random.default_rng(100);packets=[];actual=[]
     for k in range(8):
         imu=np.column_stack([k*.05+np.arange(1,11)*.005,
@@ -131,6 +155,13 @@ def test_literal_100_fuel_student_is_sensor_aware_image_free_and_calibrated(tmp_
         export_student(model,tmp_path/'wasm',frames=1200)
         report=json.loads((tmp_path/'wasm/limits.json').read_text())
         assert report['fuel_step_max']<=100 and report['limits']['step_fuel']==100
+        from viobench import Sandbox,Limits
+        sandbox=Sandbox(tmp_path/'wasm/student.wasm',limits=Limits(step_fuel=100));sandbox.init(config)
+        image=np.zeros((240,320,3),np.uint8)
+        first=sandbox.step(0.,image,np.empty((0,7),np.float64))
+        np.testing.assert_array_equal(first.pose,[0,0,0,0,0,0,1])
+        following=sandbox.step(.05,image,packets[0])
+        assert following.fuel<=100
 
 
 def test_training_camera_downsample_matches_abi_area_rounding():
@@ -166,7 +197,7 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
             camera_ticks=np.arange(0,n,5),state=truth,imu=imu,dt=np.float32(.005),frame_stride=5,scene_id=scene)
     output=tmp_path/'students'
     env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1')
-    extra=[]
+    extra=['--profiles','500','10k','1m','100m']
     if streaming:
         from test_streaming_ppo import FAKE_COLLECTOR
         collector=tmp_path/'collect_fake.py';collector.write_text(FAKE_COLLECTOR)
@@ -174,18 +205,28 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
         collection.write_text(json.dumps(dict(NUM_SCENES=2,STREAM_SCENES=1,
             STREAM_EPISODES_PER_SCENE=1,STREAM_VALIDATION_SCENES=1,STREAM_VALIDATION_EPISODES=1,COLLECT_STEPS=21)))
         extra=['--stream-data','--collector',str(collector),'--max-data-mib','3',
-               '--collection-config',str(collection),'--stream-dir',str(tmp_path/'managed'),'--profiles','100']
+               '--collection-config',str(collection),'--stream-dir',str(tmp_path/'managed'),'--profiles','500']
+        if visual_prediction=='embedding':
+            extra=['--stream-data','--collector',str(collector),'--collection-config',str(collection),'--profiles','500']
     result=subprocess.run([sys.executable,str(HERE/'distill.py'),str(data),'--teacher',str(teacher),
-        '--out',str(output),'--epochs','1','--window','11','--device','cpu','--skip-export',*extra],
+        '--out',str(output),'--epochs','1','--window','11','--device','cpu','--skip-export','--wandb-mode','disabled',*extra],
         env=env,capture_output=True,text=True,timeout=90)
     assert result.returncode == 0,result.stdout+result.stderr
     performance=json.loads((output/'performance.jsonl').read_text())
     assert performance['stage']=='distillation' and performance['samples']>0
     assert performance['samples_per_second']>0 and not performance['parallel']
     assert performance['student_updates']==performance['samples']*len(performance['active_profiles'])
-    if streaming:assert not list((tmp_path/'managed').iterdir())
+    if streaming:
+        assert not Path(performance['recording_batch']).parent.exists()
+        if visual_prediction=='embedding':
+            provenance=json.loads((output/'distillation.json').read_text())
+            import tempfile
+            assert provenance['max_data_mib']==8192
+            assert Path(provenance['stream_dir']).parent==Path(tempfile.gettempdir())
+        else:assert not list((tmp_path/'managed').iterdir())
     for name,spec in PROFILES.items():
-        if streaming and name!='100':continue
+        if spec.get('kind')=='mamba2':continue
+        if streaming and name!='500':continue
         directory=output/name
         assert (directory/'student.pt').is_file()
         saved=json.loads((directory/'student.json').read_text())
@@ -193,7 +234,7 @@ def test_distill_all_tiers_preserves_teacher_and_exports_checkpoints(tmp_path,st
         model=BudgetStudent(saved)
         model.load_state_dict(torch.load(directory/'student.pt',map_location='cpu',weights_only=True))
         assert all(torch.isfinite(p).all() for p in model.parameters())
-        if name in ('100','10k') and (WORKSPACE/'build/toolchain/wasi-sdk/bin/clang').is_file():
+        if name in ('500','10k') and (WORKSPACE/'build/toolchain/wasi-sdk/bin/clang').is_file():
             result=subprocess.run([sys.executable,'-m','students.export','--checkpoints',str(directory),
                 '--verify-frames','3'],cwd=HERE,env=env,capture_output=True,text=True,timeout=90)
             assert result.returncode == 0,result.stdout+result.stderr

@@ -1,0 +1,966 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5080",
+  "teacher": "/home/cc/eecs116/fa26/class/eecs116-aaq/Documents/project_3/viobench/viobench/solution/examples/python/1_generative_ssm/checkpoints/20261113-192121-curriculum-tujmpo0u",
+  "teacher_sha256": "f2edb71097590be270d612f2b3d6de185072aab45fcc0a547023a7051d8b52ee",
+  "recording": "/tmp/hyperdrone-seven-inputs/training.npz",
+  "validation_recording": "/tmp/hyperdrone-seven-inputs/validation.npz",
+  "provisional": true,
+  "architectures": {
+    "100": {
+      "fuel": 100,
+      "grid_width": 0,
+      "grid_height": 0,
+      "hidden": 0,
+      "aggregate": true,
+      "kind": "imu_affine",
+      "profile": "100"
+    },
+    "10k": {
+      "fuel": 10000,
+      "grid_width": 6,
+      "grid_height": 3,
+      "hidden": 0,
+      "aggregate": true,
+      "profile": "10k"
+    },
+    "1m": {
+      "fuel": 1000000,
+      "grid_width": 8,
+      "grid_height": 6,
+      "hidden": 192,
+      "aggregate": false,
+      "profile": "1m"
+    },
+    "100m": {
+      "fuel": 100000000,
+      "grid_width": 32,
+      "grid_height": 24,
+      "hidden": 1792,
+      "aggregate": false,
+      "profile": "100m"
+    },
+    "1m_ssm": {
+      "fuel": 1000000,
+      "grid_width": 8,
+      "grid_height": 6,
+      "hidden": 64,
+      "aggregate": false,
+      "kind": "mamba2",
+      "layers": 1,
+      "d_state": 8,
+      "headdim": 16,
+      "attention_dim": 0,
+      "heads": 2,
+      "window": 8,
+      "profile": "1m_ssm"
+    },
+    "1m_hybrid": {
+      "fuel": 1000000,
+      "grid_width": 8,
+      "grid_height": 6,
+      "hidden": 64,
+      "aggregate": false,
+      "kind": "mamba2",
+      "layers": 1,
+      "d_state": 8,
+      "headdim": 16,
+      "attention_dim": 64,
+      "heads": 2,
+      "window": 8,
+      "profile": "1m_hybrid"
+    },
+    "100m_hybrid": {
+      "fuel": 100000000,
+      "grid_width": 32,
+      "grid_height": 24,
+      "hidden": 384,
+      "aggregate": false,
+      "kind": "mamba2",
+      "layers": 3,
+      "d_state": 16,
+      "headdim": 32,
+      "attention_dim": 384,
+      "heads": 4,
+      "window": 16,
+      "profile": "100m_hybrid"
+    }
+  },
+  "resources": {
+    "100": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/100/native/student.wasm",
+      "module_sha256": "6de8491beb0e506e5a3a4eaa6645fe6cbf56deb513f679ba46a1898116e4d990",
+      "bytes": 20930,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 100,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 94,
+      "wall_step_seconds_max": 0.00011200200242456049,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 11760,
+      "wall_init_seconds_reported": 4.814600106328726e-05,
+      "elapsed_seconds": 1.5281267469981685,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "5ef4bba904931280c1a26f9b1e460f11357b7ea0bce7e0765c4524fb802784fd"
+    },
+    "10k": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/10k/native/student.wasm",
+      "module_sha256": "5fb45640e5f8b95e47e366e63bcecacfd3d3d28814cdeff213fc7e67d847946b",
+      "bytes": 26126,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 10000,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 9705,
+      "wall_step_seconds_max": 0.00017025999841280282,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 16703,
+      "wall_init_seconds_reported": 0.00019468400569166988,
+      "elapsed_seconds": 1.5133387559908442,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "4de4a94012b4d193afb11e8e942ad59421250fc619bec757145e05a607590024"
+    },
+    "1m": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/1m/native/student.wasm",
+      "module_sha256": "2230ea73aab90efe9282165348ad3287c5d0b77123436b1725d84c338e8467a3",
+      "bytes": 258899,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 1000000,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 803982,
+      "wall_step_seconds_max": 0.0001508410059614107,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 17599,
+      "wall_init_seconds_reported": 4.8201996833086014e-05,
+      "elapsed_seconds": 1.56904101499822,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "e11fbbf14f9537e1bcec3536db1dd0c0574771771d193523a53853ee691cf4da"
+    },
+    "100m": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/100m/native/student.wasm",
+      "module_sha256": "b66b3b8929011de06ab9262cafc989b5a1525df5ed2dc54f26b02a4cd997e963",
+      "bytes": 24001632,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 100000000,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 80074943,
+      "wall_step_seconds_max": 0.006290745004662313,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 26879,
+      "wall_init_seconds_reported": 4.192300548311323e-05,
+      "elapsed_seconds": 7.594279429002199,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "02213d4f86aee52d2678bf100b85fe369b69070ca4667c667ef869af397c2537"
+    },
+    "1m_ssm": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/1m_ssm/native/student.wasm",
+      "module_sha256": "d455f6ecfb3f94fbb44124df73f13010d68062b76e68220de4ff64ad48d45164",
+      "bytes": 167550,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 1000000,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 526898,
+      "wall_step_seconds_max": 0.002339059006772004,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 23237,
+      "wall_init_seconds_reported": 9.042200690601021e-05,
+      "elapsed_seconds": 1.5502010449999943,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "f1802bbc8df82e205e67f628ee380d55ca41cd4dc0077f0e4e6b42025e324bc9"
+    },
+    "1m_hybrid": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/1m_hybrid/native/student.wasm",
+      "module_sha256": "636b6beaeecb39ba299caf62dfe0983e42d6b25c04983d9c1ef727789e1c36f9",
+      "bytes": 237150,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 1000000,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 789305,
+      "wall_step_seconds_max": 0.0010789580119308084,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 27347,
+      "wall_init_seconds_reported": 9.479599248152226e-05,
+      "elapsed_seconds": 1.5497449880058412,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "fc041c1b9b939730e45217df506bd554a1c07e60e73fb4161b1c55364607d951"
+    },
+    "100m_hybrid": {
+      "module": "/tmp/hyperdrone-seven-pilot-final/100m_hybrid/native/student.wasm",
+      "module_sha256": "503d5fbd1defda93c6bf9f3cb56dfc1a34ae5e19b59f7b4dd6411816aca5acb0",
+      "bytes": 15727396,
+      "frames_requested": 1200,
+      "frames_completed": 1200,
+      "simulated_duration_seconds": 60.0,
+      "limits": {
+        "init_fuel": 200000000000,
+        "step_fuel": 100000000,
+        "memory_bytes": 2147483648,
+        "table_elements": 1048576,
+        "init_wall_seconds": 300.0,
+        "step_wall_seconds": 60.0
+      },
+      "max_upload_bytes": 134217728,
+      "episode_timeout_seconds": 1440,
+      "passed": true,
+      "fuel_step_max": 56390451,
+      "wall_step_seconds_max": 0.0041064010001719,
+      "memory_bytes_observed_max": 67108864,
+      "width": 320,
+      "height": 240,
+      "fuel_init": 254787,
+      "wall_init_seconds_reported": 0.00011924900172743946,
+      "elapsed_seconds": 5.289724296002532,
+      "profile_kind": "student resource check; not an accuracy evaluation",
+      "weights_sha256": "f6c209e478e45a88320ec07cb5d0c54d4fd98e3cbb5f5a11ac7e4868d504f37b"
+    }
+  },
+  "stages": [
+    {
+      "window": 401,
+      "batch": 8,
+      "windows_per_recording": 226,
+      "teacher": {
+        "seconds": 0.048198935997788794,
+        "samples": [
+          0.048410647999844514,
+          0.047987223995733075
+        ]
+      },
+      "students": {
+        "100": {
+          "seconds": 0.0013924054946983233,
+          "samples": [
+            0.0017300809995504096,
+            0.001054729989846237
+          ]
+        },
+        "10k": {
+          "seconds": 0.004666151995479595,
+          "samples": [
+            0.004759306990308687,
+            0.004572997000650503
+          ]
+        },
+        "1m": {
+          "seconds": 0.009086053003557026,
+          "samples": [
+            0.009283414998208173,
+            0.00888869100890588
+          ]
+        },
+        "100m": {
+          "seconds": 0.008759048505453393,
+          "samples": [
+            0.008804423006949946,
+            0.00871367400395684
+          ]
+        },
+        "1m_ssm": {
+          "seconds": 0.008338797000760678,
+          "samples": [
+            0.00887113600037992,
+            0.007806458001141436
+          ]
+        },
+        "1m_hybrid": {
+          "seconds": 0.008548537000024226,
+          "samples": [
+            0.008561656999518164,
+            0.008535417000530288
+          ]
+        },
+        "100m_hybrid": {
+          "seconds": 0.013599283003713936,
+          "samples": [
+            0.013738857000134885,
+            0.013459709007292986
+          ]
+        }
+      },
+      "schedules": [
+        {
+          "mode": "serial",
+          "max_concurrent": 1,
+          "seconds_per_batch": 0.10536896550547681,
+          "free_mib": 11393.625,
+          "peak_allocated_mib": 6474.58837890625,
+          "safe": true
+        },
+        {
+          "mode": "grouped",
+          "max_concurrent": 2,
+          "seconds_per_batch": 0.09838376524567138,
+          "free_mib": 11035.8125,
+          "peak_allocated_mib": 6491.486328125,
+          "safe": true
+        },
+        {
+          "mode": "streams",
+          "max_concurrent": 7,
+          "seconds_per_batch": 0.0930549027507368,
+          "free_mib": 10735.75,
+          "peak_allocated_mib": 6493.6162109375,
+          "safe": true
+        }
+      ],
+      "selected": {
+        "mode": "streams",
+        "max_concurrent": 7,
+        "seconds_per_batch": 0.0930549027507368,
+        "free_mib": 10735.75,
+        "peak_allocated_mib": 6493.6162109375,
+        "safe": true
+      }
+    },
+    {
+      "window": 801,
+      "batch": 4,
+      "windows_per_recording": 201,
+      "teacher": {
+        "seconds": 0.04795220550295198,
+        "samples": [
+          0.04834367700095754,
+          0.047560734004946426
+        ]
+      },
+      "students": {
+        "100": {
+          "seconds": 0.0016713520017219707,
+          "samples": [
+            0.001691009005298838,
+            0.0016516949981451035
+          ]
+        },
+        "10k": {
+          "seconds": 0.005134314007591456,
+          "samples": [
+            0.005147276009665802,
+            0.00512135200551711
+          ]
+        },
+        "1m": {
+          "seconds": 0.01206437150540296,
+          "samples": [
+            0.012086593007552437,
+            0.012042150003253482
+          ]
+        },
+        "100m": {
+          "seconds": 0.012517962997662835,
+          "samples": [
+            0.012232578999828547,
+            0.012803346995497122
+          ]
+        },
+        "1m_ssm": {
+          "seconds": 0.008669166498293635,
+          "samples": [
+            0.008745760002057068,
+            0.008592572994530201
+          ]
+        },
+        "1m_hybrid": {
+          "seconds": 0.00917317049606936,
+          "samples": [
+            0.009206349001033232,
+            0.00913999199110549
+          ]
+        },
+        "100m_hybrid": {
+          "seconds": 0.013393337998422794,
+          "samples": [
+            0.013455551990773529,
+            0.01333112400607206
+          ]
+        }
+      },
+      "schedules": [
+        {
+          "mode": "serial",
+          "max_concurrent": 1,
+          "seconds_per_batch": 0.10996269599854713,
+          "free_mib": 10806.4375,
+          "peak_allocated_mib": 6411.72607421875,
+          "safe": true
+        },
+        {
+          "mode": "grouped",
+          "max_concurrent": 2,
+          "seconds_per_batch": 0.09784451224913937,
+          "free_mib": 10730.4375,
+          "peak_allocated_mib": 6459.77001953125,
+          "safe": true
+        },
+        {
+          "mode": "streams",
+          "max_concurrent": 7,
+          "seconds_per_batch": 0.09390988450104487,
+          "free_mib": 10732.8125,
+          "peak_allocated_mib": 6459.64453125,
+          "safe": true
+        }
+      ],
+      "selected": {
+        "mode": "streams",
+        "max_concurrent": 7,
+        "seconds_per_batch": 0.09390988450104487,
+        "free_mib": 10732.8125,
+        "peak_allocated_mib": 6459.64453125,
+        "safe": true
+      }
+    },
+    {
+      "window": 1601,
+      "batch": 2,
+      "windows_per_recording": 151,
+      "teacher": {
+        "seconds": 0.049431757994170766,
+        "samples": [
+          0.05028287699678913,
+          0.048580638991552405
+        ]
+      },
+      "students": {
+        "100": {
+          "seconds": 0.0010839515016414225,
+          "samples": [
+            0.0011058939999202266,
+            0.0010620090033626184
+          ]
+        },
+        "10k": {
+          "seconds": 0.005126013507833704,
+          "samples": [
+            0.00509699500980787,
+            0.005155032005859539
+          ]
+        },
+        "1m": {
+          "seconds": 0.01851645299757365,
+          "samples": [
+            0.018710256001213565,
+            0.018322649993933737
+          ]
+        },
+        "100m": {
+          "seconds": 0.018079917499562725,
+          "samples": [
+            0.018049977996270172,
+            0.01810985700285528
+          ]
+        },
+        "1m_ssm": {
+          "seconds": 0.009055574504600372,
+          "samples": [
+            0.009115813998505473,
+            0.008995335010695271
+          ]
+        },
+        "1m_hybrid": {
+          "seconds": 0.009605601997463964,
+          "samples": [
+            0.009597144991857931,
+            0.009614059003069997
+          ]
+        },
+        "100m_hybrid": {
+          "seconds": 0.015242470995872281,
+          "samples": [
+            0.01657972599787172,
+            0.013905215993872844
+          ]
+        }
+      },
+      "schedules": [
+        {
+          "mode": "serial",
+          "max_concurrent": 1,
+          "seconds_per_batch": 0.12691067775085685,
+          "free_mib": 10807.75,
+          "peak_allocated_mib": 6376.35791015625,
+          "safe": true
+        },
+        {
+          "mode": "grouped",
+          "max_concurrent": 2,
+          "seconds_per_batch": 0.11154282149800565,
+          "free_mib": 10731.75,
+          "peak_allocated_mib": 6376.9287109375,
+          "safe": true
+        },
+        {
+          "mode": "streams",
+          "max_concurrent": 7,
+          "seconds_per_batch": 0.11202875675007817,
+          "free_mib": 10710.4375,
+          "peak_allocated_mib": 6409.7890625,
+          "safe": true
+        }
+      ],
+      "selected": {
+        "mode": "grouped",
+        "max_concurrent": 2,
+        "seconds_per_batch": 0.11154282149800565,
+        "free_mib": 10731.75,
+        "peak_allocated_mib": 6376.9287109375,
+        "safe": true
+      }
+    },
+    {
+      "window": 2401,
+      "batch": 1,
+      "windows_per_recording": 101,
+      "teacher": {
+        "seconds": 0.037833098009286914,
+        "samples": [
+          0.037956536005367525,
+          0.0377096600132063
+        ]
+      },
+      "students": {
+        "100": {
+          "seconds": 0.001466232497477904,
+          "samples": [
+            0.0015172549901762977,
+            0.0014152100047795102
+          ]
+        },
+        "10k": {
+          "seconds": 0.0054662769980495796,
+          "samples": [
+            0.005546439002500847,
+            0.005386114993598312
+          ]
+        },
+        "1m": {
+          "seconds": 0.024399575995630585,
+          "samples": [
+            0.02464645500003826,
+            0.02415269699122291
+          ]
+        },
+        "100m": {
+          "seconds": 0.0235841115063522,
+          "samples": [
+            0.02367251500254497,
+            0.023495708010159433
+          ]
+        },
+        "1m_ssm": {
+          "seconds": 0.009794168501684908,
+          "samples": [
+            0.010218098002951592,
+            0.009370239000418223
+          ]
+        },
+        "1m_hybrid": {
+          "seconds": 0.010121088002051692,
+          "samples": [
+            0.010343464004108682,
+            0.009898711999994703
+          ]
+        },
+        "100m_hybrid": {
+          "seconds": 0.014276320500357542,
+          "samples": [
+            0.014522429002681747,
+            0.014030211998033337
+          ]
+        }
+      },
+      "schedules": [
+        {
+          "mode": "serial",
+          "max_concurrent": 1,
+          "seconds_per_batch": 0.12565075200109277,
+          "free_mib": 10807.75,
+          "peak_allocated_mib": 5097.642578125,
+          "safe": true
+        },
+        {
+          "mode": "grouped",
+          "max_concurrent": 2,
+          "seconds_per_batch": 0.11634034250164405,
+          "free_mib": 10730.4375,
+          "peak_allocated_mib": 5097.94873046875,
+          "safe": true
+        },
+        {
+          "mode": "streams",
+          "max_concurrent": 7,
+          "seconds_per_batch": 0.1140657102514524,
+          "free_mib": 10730.4375,
+          "peak_allocated_mib": 5148.669921875,
+          "safe": true
+        }
+      ],
+      "selected": {
+        "mode": "streams",
+        "max_concurrent": 7,
+        "seconds_per_batch": 0.1140657102514524,
+        "free_mib": 10730.4375,
+        "peak_allocated_mib": 5148.669921875,
+        "safe": true
+      }
+    },
+    {
+      "window": 4001,
+      "batch": 1,
+      "windows_per_recording": 1,
+      "teacher": {
+        "seconds": 0.061411659997247625,
+        "samples": [
+          0.06161046899796929,
+          0.06121285099652596
+        ]
+      },
+      "students": {
+        "100": {
+          "seconds": 0.0016045735101215541,
+          "samples": [
+            0.0016903940122574568,
+            0.0015187530079856515
+          ]
+        },
+        "10k": {
+          "seconds": 0.005765176996646915,
+          "samples": [
+            0.005743946996517479,
+            0.00578640699677635
+          ]
+        },
+        "1m": {
+          "seconds": 0.03615193750010803,
+          "samples": [
+            0.036470188992097974,
+            0.03583368600811809
+          ]
+        },
+        "100m": {
+          "seconds": 0.03541904449957656,
+          "samples": [
+            0.03633405899745412,
+            0.03450403000169899
+          ]
+        },
+        "1m_ssm": {
+          "seconds": 0.010659313498763368,
+          "samples": [
+            0.01203401800012216,
+            0.009284608997404575
+          ]
+        },
+        "1m_hybrid": {
+          "seconds": 0.010209758998826146,
+          "samples": [
+            0.010331459998269565,
+            0.010088057999382727
+          ]
+        },
+        "100m_hybrid": {
+          "seconds": 0.015796996500284877,
+          "samples": [
+            0.01750341200386174,
+            0.014090580996708013
+          ]
+        }
+      },
+      "schedules": [
+        {
+          "mode": "serial",
+          "max_concurrent": 1,
+          "seconds_per_batch": 0.17059428825086798,
+          "free_mib": 10804.4375,
+          "peak_allocated_mib": 7626.060546875,
+          "safe": true
+        },
+        {
+          "mode": "grouped",
+          "max_concurrent": 2,
+          "seconds_per_batch": 0.15113922375167022,
+          "free_mib": 10678.8125,
+          "peak_allocated_mib": 7679.05224609375,
+          "safe": true
+        },
+        {
+          "mode": "streams",
+          "max_concurrent": 7,
+          "seconds_per_batch": 0.15452595000169822,
+          "free_mib": 10698.0,
+          "peak_allocated_mib": 7643.412109375,
+          "safe": true
+        }
+      ],
+      "selected": {
+        "mode": "grouped",
+        "max_concurrent": 2,
+        "seconds_per_batch": 0.15113922375167022,
+        "free_mib": 10678.8125,
+        "peak_allocated_mib": 7679.05224609375,
+        "safe": true
+      }
+    }
+  ],
+  "parallel_teacher_physics": true,
+  "assumptions": {
+    "training_recordings": 8,
+    "validation_recordings": 12,
+    "collection_seconds_per_batch": 0
+  },
+  "limitations": [
+    "A bounded timing pilot cannot predict epochs to convergence.",
+    "Epoch estimates extrapolate one recording; flight lengths and window counts must match.",
+    "Steady-state timings reuse one collated minibatch; exclude ongoing loader/collation and NPZ loading.",
+    "Collection is not launched; supply measured collection time for an inclusive projection.",
+    "Export probes and compilation are reported separately from steady-state GPU time.",
+    "Fresh generation extrapolates one detailed HSSD scene; mixed scenes can differ.",
+    "Initial validation collection, dataset decoding, and GPU interference are excluded from the ideal-overlap streaming projection.",
+    "Compute projections omit validation preprocessing; the production-loop smoke includes it."
+  ],
+  "resource_probe_seconds": 32.479858530990896,
+  "teacher_target_parity": {
+    "correction_max_abs": 0.0,
+    "state_max_abs": {
+      "pos": 0.000946044921875,
+      "vel": 0.0001678466796875,
+      "rot": 1.8537044525146484e-05,
+      "omega": 0.0
+    }
+  },
+  "validation_seconds_per_recording": {
+    "100": 0.0001695715036476031,
+    "10k": 0.001359980000415817,
+    "1m": 0.008620600005087908,
+    "100m": 0.00789494549826486,
+    "1m_ssm": 0.0026865310064749792,
+    "1m_hybrid": 0.002878959508961998,
+    "100m_hybrid": 0.003952149992983323
+  },
+  "portfolio_projection_seconds": {
+    "100": 1434.8827710143523,
+    "300": 1742.8560990550322,
+    "500": 2050.829427095712,
+    "curriculum_seconds": 1317.852906358894,
+    "earliest_stale_stop_seconds": 1330.1718394805212,
+    "earliest_stale_stop_with_3_pass_reuse_seconds": 1354.8097057237756
+  },
+  "student_projection_seconds": {
+    "100": {
+      "100": 599.0473210515629,
+      "300": 700.2802662721078,
+      "500": 801.5132114926528,
+      "curriculum_seconds": 560.5788018677558,
+      "earliest_stale_stop_seconds": 564.6281196765776,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 572.7267552942212
+    },
+    "10k": {
+      "100": 649.8379712299211,
+      "300": 760.5848624211503,
+      "500": 871.3317536123795,
+      "curriculum_seconds": 607.754152577254,
+      "earliest_stale_stop_seconds": 612.1840282249032,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 621.0437795202015
+    },
+    "1m": {
+      "100": 840.0501363243966,
+      "300": 1016.8413323323766,
+      "500": 1193.6325283403567,
+      "curriculum_seconds": 772.8694818413642,
+      "earliest_stale_stop_seconds": 779.9411296816834,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 794.0844253623218
+    },
+    "100m": {
+      "100": 833.8490200629749,
+      "300": 1007.7260164537292,
+      "500": 1181.6030128444836,
+      "curriculum_seconds": 767.7757614344882,
+      "earliest_stale_stop_seconds": 774.7308412901184,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 788.6410010013788
+    },
+    "1m_ssm": {
+      "100": 703.1339853271202,
+      "300": 824.8952173362777,
+      "500": 946.6564493454352,
+      "curriculum_seconds": 656.8647171636403,
+      "earliest_stale_stop_seconds": 661.7351664440066,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 671.4760650047392
+    },
+    "1m_hybrid": {
+      "100": 708.169840847695,
+      "300": 829.6736140629218,
+      "500": 951.1773872781487,
+      "curriculum_seconds": 661.9984070259088,
+      "earliest_stale_stop_seconds": 666.8585579545179,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 676.578859811736
+    },
+    "100m_hybrid": {
+      "100": 770.4551458281057,
+      "300": 903.4741562073177,
+      "500": 1036.4931665865297,
+      "curriculum_seconds": 719.9079218840052,
+      "earliest_stale_stop_seconds": 725.2286822991737,
+      "earliest_stale_stop_with_3_pass_reuse_seconds": 735.8702031295106
+    }
+  },
+  "complete_horizon_calibration": true,
+  "pilot_wall_seconds": 54.3784898169979,
+  "collection_measurement": {
+    "source": "/tmp/hyperdrone-seven-collection-full/collection_stats.json",
+    "stats": {
+      "episodes": 2,
+      "captures": 2002,
+      "seconds": 29.824410163986613,
+      "captures_per_second": 67.12622274815153,
+      "instances": 2,
+      "build_seconds": 12.304765212989878,
+      "rollout_seconds": 4.934577249005088,
+      "compression_level": 1,
+      "recording_bytes": 566316643,
+      "repaired_empty_primitives": 0,
+      "compression_seconds": 12.355136070007575,
+      "write_seconds": 0.12833706400124356,
+      "simulated_captures": 2002,
+      "rollout_captures_per_second": 405.70851340986593
+    },
+    "estimated_seconds_per_training_batch": 119.29764065594645
+  },
+  "streaming_projection_seconds": {
+    "100": 4460.58824185119,
+    "300": 12413.764285580954,
+    "500": 20366.940329310717,
+    "curriculum_seconds": 1438.38134523388,
+    "earliest_stale_stop_seconds": 2392.7624704814516,
+    "earliest_stale_stop_with_3_pass_reuse_seconds": 2392.7624704814516
+  },
+  "date": "2026-11-14",
+  "inclusive_cli_epochs": [
+    {
+      "stage": "distillation",
+      "epoch": 1,
+      "seconds": 43.52254555199761,
+      "samples": 226,
+      "samples_per_second": 5.192710976199484,
+      "loader_wait_seconds": 0.0,
+      "peak_allocated_mib": 6704.1552734375,
+      "active_profiles": [
+        "100",
+        "10k",
+        "1m",
+        "100m",
+        "1m_ssm",
+        "1m_hybrid",
+        "100m_hybrid"
+      ],
+      "parallel": true,
+      "student_updates": 1582,
+      "window": 401,
+      "max_concurrent": 2,
+      "recording_batch": 1,
+      "fresh_data_wait_seconds": 0.0,
+      "recording_pass": 1
+    },
+    {
+      "stage": "distillation",
+      "epoch": 2,
+      "seconds": 7.529746297994279,
+      "samples": 226,
+      "samples_per_second": 30.01429145895663,
+      "loader_wait_seconds": 0.0,
+      "peak_allocated_mib": 7061.2041015625,
+      "active_profiles": [
+        "100",
+        "10k",
+        "1m",
+        "100m",
+        "1m_ssm",
+        "1m_hybrid",
+        "100m_hybrid"
+      ],
+      "parallel": true,
+      "student_updates": 1582,
+      "window": 401,
+      "max_concurrent": 2,
+      "recording_batch": 2,
+      "fresh_data_wait_seconds": 0.0,
+      "recording_pass": 1
+    }
+  ],
+  "recording_sha256": "7e7504a96128a17f2fe02a57f38663bd1ce28064e4b38174b97de74c14fa23cd",
+  "validation_recording_sha256": "b3b9362f5b49ece991b10dce1e8ede87f8d3b1af73aee852a0182e59c9ef1674"
+}

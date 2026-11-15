@@ -75,7 +75,7 @@ def main():
 
     result=dict(gpu=torch.cuda.get_device_name(),torch=torch.__version__,batch=b,window=t,
         amp=args.amp,fused_adamw=args.fused_adamw,visual_prediction=args.visual_prediction,steps=args.steps,warmup=args.warmup,repeats=args.repeats,
-        scope='Synthetic full-size teacher and all four students; shared target generation, transfers, backward and AdamW. '
+        profiles=list(PROFILES),scope='Synthetic GRU teacher and selected default students; shared target generation, transfers, backward and AdamW. '
               'Excludes simulator, DataLoader, validation, checkpoint/export and accuracy evaluation.')
     result['serial']=probe(False)
     gc.collect();torch.cuda.empty_cache()

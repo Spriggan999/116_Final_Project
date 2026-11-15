@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "student_weights.h"
+#if STUDENT_SSM
+#include "native_ssm.h"
+#endif
 
 static double position[3],velocity[3],rotation[4],gravity[3],omega[3];
 static double Rci[9],lever[3],qci[4],last_t;
@@ -64,10 +67,16 @@ int32_t init(const char *json,uint32_t length){
     memset(rotation,0,sizeof(rotation));rotation[3]=1;
     memset(gravity,0,sizeof(gravity));memset(omega,0,sizeof(omega));
     memset(hidden,0,sizeof(hidden));memset(previous,0,sizeof(previous));ready=gravity_ready=0;last_t=0;
+#if STUDENT_SSM
+    ssm_reset();
+#endif
     return 0;
 }
 
 static void prediction(const float *features,float *correction){
+#if STUDENT_SSM
+    ssm_prediction(features,correction);
+#else
     const float *w=WEIGHTS;
 #if HIDDEN > 0
     float next[HIDDEN];
@@ -88,6 +97,7 @@ static void prediction(const float *features,float *correction){
         float v=bias_out[i];for(int j=0;j<n;j++)v+=w[i*n+j]*x[j];
         correction[i]=.25f*tanhf(v);
     }
+#endif
 }
 static void physical(const double *imu,const float *correction,double dt){
     double acc[3],world[3],dq[4],next[4];

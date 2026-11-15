@@ -1,4 +1,4 @@
-/* Literal 100-fuel tier. Standard ABI packets only: 20 Hz, ten IMU rows.
+/* Literal 100-fuel tier. 20 Hz, ten IMU rows after the initial frame.
  * Learns six affine acceleration coefficients. RGB/gyro are ignored; attitude
  * is fixed. Calibration is applied to coefficients once in init, never in step.
  * Keep the step kernel small and meter every compiled export before publishing.
@@ -35,8 +35,8 @@ int32_t init(const char *json,uint32_t length){
     ready=0;p=v=(vec){0,0,0,0};return 0;
 }
 int32_t step(double t,const uint8_t *frame,const double *imu,int32_t count,double *__restrict out){
-    if(count!=10)return -1;
     if(ready){
+        if(count!=10)return -1;
         const double *a=imu+64;
         vec acc=m0*(float)a[0]+m1*(float)a[1]+m2*(float)a[2]+offset;
         v+=acc*.05f;p+=v*.05f;

@@ -9,6 +9,10 @@ For architecture, losses, coordinate systems, and implementation details, read
 For SSH access from your personal computer, persistent training sessions, and
 remote monitoring or stopping runs, read [SSH_README.md](SSH_README.md).
 
+For leaderboard episode durations, ground-truth path lengths, and the distinction
+between camera frames and IMU samples, read
+[TRAJECTORY_LENGTHS_README.md](TRAJECTORY_LENGTHS_README.md).
+
 The latest [training optimization and capacity review](verification/training_optimization_review.md)
 covers lower-memory camera processing, parallel training physics, vectorized PPO,
 the HSSD empty-mesh repair, and a resource-checked optional 96-dimensional
@@ -22,7 +26,7 @@ The usual workflow is:
 2. Train with background data generation.
 3. Export, bundle, and check the trained model.
 4. Evaluate accuracy on actual benchmark episodes.
-5. Optionally [distill the teacher into 100/10K/1M/100M fuel students](#14-distill-teachers-into-fuel-budgeted-students).
+5. Optionally [distill the teacher into seven fuel-budgeted students](#14-distill-teachers-into-fuel-budgeted-students).
 
 **Run commands one line at a time.** Do not copy the terminal prompt or add `\`
 to the end of a command. Wait for a command to succeed before continuing.
@@ -181,7 +185,7 @@ These are candidates for retraining and accuracy comparison, not new defaults:
 | Model | Comparison baseline | Larger candidate | Candidate resource use | Check length |
 |---|---|---|---:|---:|
 | Optional GRU teacher | GRU 1,792; predictor hidden 256 | GRU 1,824; predictor hidden 256 | 126.16/128 MiB upload | 3 frames |
-| `100` student | Six affine coefficients | Keep current size | 99/100 fuel | 1,200 frames |
+| Legacy `100` student | Six affine coefficients | Historical; replaced by visual `500` | 99/100 fuel | 1,200 frames |
 | `10k` student | 4x3 visual grid | 6x3 visual grid | 9,705/10,000 fuel | 1,200 frames |
 | `1m` student | Hidden 192 | Hidden 216 | 967,184/1,000,000 fuel | 1,200 frames |
 | `100m` student | Hidden 1,792 | Hidden 2,048 | 98,058,684/100,000,000 fuel | 1,200 frames |
@@ -696,24 +700,44 @@ including PPO horizon promotions.
 
 State validation logs Mean ATE in metres as `student/val_mean_ate_m`,
 `teacher/val_mean_ate_m`, `distill/val_mean_ate_m`, and `ppo/val_mean_ate_m`.
-This is the mean Euclidean distance between predicted and ground-truth positions
-over timestamps and validation windows, weighted by window count across batches.
-Both trajectories already share a local starting frame; no rigid/scale alignment
-is fitted. It differs from coordinate-wise `student/val_pos_rmse` and ATE RMSE.
-Metrics use the fixed, unaugmented validation horizon, so curriculum changes do
-not change their evaluation difficulty. PPO records the SL baseline and the
-loss-selected checkpoint's Mean ATE too, in W&B and `ppo_metrics.jsonl`.
-These diagnostics reuse validation predictions and do not change training loss
-or checkpoint selection. Visual-only training has no estimated position trajectory
-and therefore does not report ATE. Existing W&B histories are not backfilled.
+For future runs this is **the leaderboard's Mean Sim(3) ATE definition**: fit one
+rotation, translation and uniform scale per complete recording, compute its
+position RMSE at observed camera timestamps, then take the arithmetic mean with
+equal weight per episode. It calls VIOBench's own `evaluate_trajectory` scorer,
+including its handling of constant and invalid estimates. A logarithmic plot
+axis does not transform the logged metric.
+
+Each stage also logs the explicit alias `val_sim3_ate_rmse_mean` and the number
+of episodes as `val_ate_episodes`. Camera-centre scoring accounts for the camera
+lever arm, which new built-in collections save per flight. For older recordings
+without this calibration, the lever arm defaults to zero; compare
+`val_ate_camera_calibrated_episodes` with `val_ate_episodes` to detect that case
+and recollect for camera-centre parity. W&B run configuration records the metric
+definition and scope.
+
+The score uses full, unaugmented held-out recordings independently of curriculum
+window length. Complete predictions from ordinary validation are reused; when
+loss validation uses shorter windows, only missing episodes receive a separate
+uninterrupted evaluation pass. Overlapping reset windows are never pooled as
+one episode or overweighted in the mean. PPO records the SL baseline and the
+loss-selected checkpoint's aligned Mean ATE too, in W&B and `ppo_metrics.jsonl`.
+The old unaligned Mean ATE calculation/logging has been removed. Position RMSE
+and the training loss remain separate diagnostics, and checkpoint selection
+still uses validation loss.
+
+This matches the scoring definition, not necessarily the numeric score from a
+WASM evaluation: that requires the same episodes, camera inputs and deployed
+inference path. Visual-only training has no position trajectory and does not
+report ATE. Earlier W&B histories retain their original metric definition and
+are not rewritten or backfilled.
 
 `curriculum_state.json` stores the latest
 gate state for inspection. Gates restart for each training phase; PPO inherits
 the final SL difficulty levels within the same invocation. Checkpoint warm starts
 restart the schedules and PPO optimizer/critic rather than resuming exact state.
 The optional auxiliary teacher and its in-process SL distillation also use these
-controls. The separate native-student `distill.py` workflow retains its existing
-training policy.
+controls. The separate native-student `distill.py` workflow uses a shared 2–20 s
+horizon schedule and independent full-trajectory ATE selection; see section 14.
 
 Set `USE_CURRICULUM=false` to disable motion/visual/IMU controls and SL scheduling.
 The standalone PPO window schedule remains available; clear
@@ -1146,20 +1170,20 @@ For model internals and the limits of the measured resource profile, continue to
 
 Use a complete teacher checkpoint set: `checkpoints/RUN/post_sl` for its SL
 version, or `checkpoints/RUN` for the final PPO-selected version. Distillation
-freezes both teacher components and trains four separate compact students.
+freezes both teacher components and trains seven separate compact students.
 The teacher's checkpoints are preserved.
 
-With `myenv` active and your terminal in `1_generative_ssm`, train all four
+With `myenv` active and your terminal in `1_generative_ssm`, train all seven
 students with background recording generation:
 
 ```bash
-python distill.py --teacher checkpoints/RUN --stream-data --max-data-mib 3072
+python distill.py --teacher checkpoints/RUN --stream-data --max-data-mib 8192
 ```
 
 To use the post-SL teacher instead:
 
 ```bash
-python distill.py --teacher checkpoints/RUN/post_sl --stream-data --max-data-mib 3072
+python distill.py --teacher checkpoints/RUN/post_sl --stream-data --max-data-mib 8192
 ```
 Distillation also uses the current collection defaults. To override scene counts,
 flight lengths or collection budgets, supply `--collection-config FILE.json`
@@ -1170,11 +1194,24 @@ The command prints a new directory such as `checkpoints/distill-20261112-...`.
 Below, replace `DISTILL_RUN` with that directory's actual name. All profiles share
 one teacher forward pass per training minibatch; targets stay in RAM. The same
 three-slot recording budget and bounded reuse policy apply. Validation recordings
-stay fixed. Defaults are 100 maximum epochs and patience of 8 non-improving fresh
-batches (8 epochs for fixed data), independently for each student.
+stay fixed. Defaults are **500 maximum epochs** and patience of **8 non-improving
+fresh batches** (8 epochs for fixed data), independently for each student.
+The shared horizon advances through 401, 801, 1601, 2401 and 4001 IMU samples,
+six epochs at each introductory stage. Early stopping starts at the final
+20-second stage. All checkpoint comparisons use complete held-out trajectories
+and equal-per-episode Mean Sim(3) ATE. `--window N` selects a fixed horizon.
+W&B defaults online in `hyperdrone-vio-fuel-aware`; use `--wandb-mode offline`
+or `disabled` for a local run. The 500-epoch ceiling does not force converged
+students to keep training. A plateau is not proof of a good fit.
 
-On CUDA, distillation runs each active student on its own CUDA stream and host
-worker. A separate stream prepares the next minibatch's shared teacher targets
+On CUDA, each active student has its own CUDA stream and host worker.
+`--parallel-mode auto` benchmarks serial updates, small groups, all active streams,
+cost-balanced pairs and heavy-student isolation, then chooses the fastest measured configuration
+with at least 15% estimated VRAM headroom. It retunes as horizons or active
+students change. Probe updates restore weights,
+optimizer and RNG before real training. `--parallel-mode streams` requests
+concurrent streams directly; `--max-concurrent N` explicitly bounds the group.
+A separate stream prepares the next minibatch's shared teacher targets
 while those students train. Hyperdrone continues collecting the next recording
 batch in its existing background process. Target prefetch is limited to one
 minibatch ahead; every student finishes its current update before advancing.
@@ -1182,6 +1219,12 @@ Validation also runs independent tiers concurrently, using FP32 and no teacher
 forward pass. Neural layers use the existing BF16 setting during training;
 student integration and losses stay FP32. CUDA loader workers use `spawn` to
 avoid forking with live CUDA scheduling threads. CPU runs stay serial.
+The frozen hybrid teacher also uses parallel physical integration for targets;
+its neural corrections stay in evaluation mode and FP32. Use
+`--no-parallel-teacher-physics` to compare the original integration order.
+The bounded recording ring defaults to **8 GiB under `/tmp`**, keeping long,
+detailed-scene recordings off the home quota. Checkpoints remain under `--out`.
+An explicit `--stream-dir`, `--max-data-mib`, or collection budget overrides this.
 The producer also fetches/collates the next minibatch, so that work can overlap
 current updates. Teacher and students share one input transfer, and each
 student caches BF16 weight casts across its camera ticks within one forward
@@ -1205,18 +1248,39 @@ serial scheduling. Reduce `--batch` or select fewer `--profiles` if needed;
 speedup depends on GPU capacity and workload; continuous saturation is not
 guaranteed. The recording disk limit does not cap GPU activation memory.
 
-The local RTX 5080 compute probe measured **11.44 → 17.02 shared windows/s
-(1.49x)** for the full-size teacher and all tiers, using batch four and 101-tick
+The historical four-student RTX 5080 compute probe measured **11.44 → 17.02 shared windows/s
+(1.49x)** for the GRU teacher and four original tiers, using batch four and 101-tick
 windows. It excludes collection, loaders and validation. A separate two-epoch
 CUDA smoke run verified real background Hyperdrone collection and loader workers.
 See [the measured results and reproduction command](verification/README.md#parallel-distillation-throughput-2026-11-12).
 
 | Profile | Maximum fuel/frame | Student architecture | Parameters |
 |---|---:|---|---:|
-| `100` | 100 | IMU-only affine acceleration model; fixed attitude and 20 Hz integration | 6 |
-| `10k` | 10,000 | Linear correction head, 12 sparse grayscale samples, frame-level IMU integration | 288 |
+| `500` | 500 | Two grayscale samples + temporal differences + last 3-axis accelerometer; fixed attitude | 18 |
+| `10k` | 10,000 | Linear correction head, **6×3** sparse grayscale samples, frame-level IMU integration | 396 |
 | `1m` | 1,000,000 | 192-unit recurrent network, 48 samples, per-IMU-sample integration | 58,569 |
 | `100m` | 100,000,000 | 1,792-unit recurrent network, 768 samples, per-IMU-sample integration | 5,994,249 |
+| `1m_ssm` | 1,000,000 | One official Mamba-2 block, width 64, state 8; 8×6 samples | measured during calibration |
+| `1m_hybrid` | 1,000,000 | Mamba-2 width 64 + bounded two-head attention; 8×6 samples | measured during calibration |
+| `100m_hybrid` | 100,000,000 | Three Mamba-2 blocks, width 384 + four-head local attention; 32×24 samples | measured during calibration |
+
+The three new profiles are additional experiments, not replacements for either
+RNN. Official CUDA sequence scans train them; native C/WASM executes the same
+recurrence with fixed state and bounded projected-key/value caches. There is no
+custom PyTorch Mamba backend. CUDA physics uses associative normalized quaternion
+prefix products and cumulative integration, verified against sequential outputs
+and gradients, to avoid thousands of Python integration steps per student.
+
+Before training, new architectures are metered over 1,200 synthetic frames and
+must retain 5% fuel headroom. The bounded candidate ladder can reduce SSM state,
+attention projection/window, or large-profile depth/width. The actual chosen
+settings are saved in `student.json`; `architecture_search.json` contains the
+measurements. Use `--architecture-config FILE` to reuse calibrated settings.
+The final trained export must pass its cap again. Existing 4×3 checkpoints retain
+their saved architecture; changing the default does not reshape old weights.
+
+See [STUDENTS_README.md](STUDENTS_README.md) for the timing pilot, seven-student
+launch, eight-model evaluation, and the website's exact Pareto area calculation.
 
 These are the current default profiles. The [larger sizing candidates](#choose-model-size-against-deployment-limits)
 were measured separately. `--profiles` selects existing tiers; it does not
@@ -1239,26 +1303,26 @@ checkpoints/DISTILL_RUN/1m/native/student.wasm
 checkpoints/DISTILL_RUN/100m/native/student.wasm
 ```
 
-### Literal 100-fuel IMU-only tier
+### Minimal 500-fuel visual/IMU tier
 
 ```bash
-python distill.py --teacher checkpoints/RUN --stream-data --profiles 100
+python distill.py --teacher checkpoints/RUN --stream-data --profiles 500
 ```
 
-This is a deliberately restricted model with six learned coefficients: one gain
-and one offset for each accelerometer axis. It ignores the RGB buffer entirely,
-uses only the last accelerometer sample in each packet, and ignores gyro. It
-keeps orientation fixed at identity and integrates position/velocity at the ABI's
-fixed 20 Hz using semi-implicit Euler. Camera calibration is folded into the
-coefficients during initialization. It requires the ABI's standard ten-row IMU
-packets; irregular rates/packet sizes are unsupported at this tier.
+This replaces the 100-fuel default with 18 learned coefficients: accelerometer
+gains/biases and a 3×4 visual acceleration head. Two sparse grayscale pixels and
+their temporal differences supply four visual features. The model reads only
+the last three accelerometer values in each standard packet. It keeps attitude
+fixed, ignores gyro, and integrates at 20 Hz using semi-implicit Euler.
+Calibration and grayscale scaling are folded into coefficients during init.
+The initial frame can have an empty IMU packet; subsequent packets have ten rows.
 
-The teacher still uses images when creating distillation targets. The 100-fuel
-student learns to match teacher acceleration and trajectory targets; it is an
-IMU-only motion prior, with substantial limitations during rotations and changes
-in gravity direction. The resource probe passed 1,200 frames at **99 fuel/frame**.
-There is only one fuel unit of margin with the tested compiler, so every export
-must pass the exact cap; compiler/code changes can affect whether it fits.
+It learns visual-conditioned acceleration and trajectory targets from the
+teacher. The focused native/WASM check passed 1,200 frames at **150/500 fuel**,
+including nonzero visual weights. Vision affects the output and receives training
+gradients. No runtime benchmark was repeated for this change. Historical 100-fuel
+timing/resource reports remain historical; old checkpoint files are still
+loadable, while the new visual model requires fresh distillation.
 
 Each `native/` directory also contains `limits.json` and
 `submission_limits.json`. Over-budget candidates fail verification and are not
@@ -1283,7 +1347,7 @@ native export already produces a standalone `.wasm`.
 python distill.py --teacher checkpoints/RUN --stream-data --profiles 10k 1m --epochs 200 --patience 12 --skip-export
 ```
 
-`--profiles` accepts any subset of `100 10k 1m 100m` (all four by default). Each profile saves its own
+`--profiles` accepts any subset of `500 10k 1m 100m 1m_ssm 1m_hybrid 100m_hybrid` (all seven by default). Each profile saves its own
 `student.pt`, `student.json` and `metrics.jsonl`. The run root records the teacher
 path, model settings and checkpoint hashes in `distillation.json`.
 
@@ -1314,7 +1378,7 @@ These commands rebuild and enforce the saved tier's fuel cap before publishing
 python -m viobench evaluate checkpoints/DISTILL_RUN/10k/native/student.wasm --limits checkpoints/DISTILL_RUN/10k/native/submission_limits.json -o report-student-10k
 ```
 
-Substitute `100`, `1m` or `100m` in both paths to test another tier. Use separate report
+Substitute `500`, `1m` or `100m` in both paths to test another tier. Use separate report
 directories for the SL-teacher and PPO-teacher students. Compare Mean Sim(3) ATE
 on held-out episodes; budget compliance alone does not establish retained accuracy.
 

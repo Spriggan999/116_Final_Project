@@ -271,7 +271,7 @@ class TrainingData:
             heldout = max(scene for _, scene in records)
             train_files = [p for p, scene in records if scene != heldout]
             val_files = [p for p, scene in records if scene == heldout]
-        from data import EpisodeStore, FramePairs, StateWindows
+        from data import EpisodeStore, FramePairs, StateWindows, StateEpisodes
         from torch.utils.data import DataLoader
         from performance import loader_options
         self.loader_options=loader_options(cfg)
@@ -284,6 +284,9 @@ class TrainingData:
                                        compact_cameras=getattr(cfg,'COMPACT_STATE_CAMERAS',True))
         self.val_pair_loader = DataLoader(self.val_pairs,batch_size=getattr(cfg,'FRAME_VAL_PAIR_BATCH',cfg.FRAME_PAIR_BATCH),**self.frame_loader_options)
         self.val_state_loader = DataLoader(self.val_windows, batch_size=cfg.BATCH,**self.loader_options)
+        self.val_episode_loader=DataLoader(StateEpisodes(self.val_data,
+            compact_cameras=getattr(cfg,'COMPACT_STATE_CAMERAS',True)),batch_size=1,
+            num_workers=0,pin_memory=self.loader_options.get('pin_memory',False))
         self._load_train(train_files)
 
     def _load_train(self, paths):
@@ -578,7 +581,7 @@ class TrainingData:
             loader._iterator=None
 
     def close(self):
-        for name in ('train_pair_loader','train_state_loader','val_pair_loader','val_state_loader',
+        for name in ('train_pair_loader','train_state_loader','val_pair_loader','val_state_loader','val_episode_loader',
                      'ppo_state_loader','ppo_val_loader','curriculum_pair_loader','curriculum_state_loader'):
             self._close_loader(getattr(self,name,None))
         for loader in getattr(self,'probe_loaders',{}).values():

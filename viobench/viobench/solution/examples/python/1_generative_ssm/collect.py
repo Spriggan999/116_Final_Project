@@ -82,6 +82,13 @@ def collect_round(env,steps):
     import numpy as np
     count=int(env.total_instances);stride=int(env.frame_stride);dt=float(env.dt)
     env.reset();env.render()
+    # Preserve each reset's camera lever arm for camera-centre trajectory scoring.
+    parameters=env.instance_parameters() if hasattr(env,'instance_parameters') else None
+    camera_positions=[]
+    for i in range(count):
+        cameras=parameters[i]['cameras'] if parameters is not None else {}
+        front=cameras.get('front') or next(iter(cameras.values()),None)
+        camera_positions.append(np.asarray(front['mount']['pose']['position'] if front else [0.,0.,0.],np.float32))
     initial=instance_rows(env.observe_privileged(),count,18);validate_truth(initial)
     frames=instance_frames(env.frames(),count)
     records=[dict(state=[initial[i].copy()],imu=[np.zeros(6,np.float32)],camera=[frames[i]],camera_ticks=[0]) for i in range(count)]
@@ -102,10 +109,11 @@ def collect_round(env,steps):
             for i in np.flatnonzero(active):
                 records[i]['camera'].append(frames[i]);records[i]['camera_ticks'].append(tick)
     result=[]
-    for row in records:
+    for i,row in enumerate(records):
         if len(row['state'])<max(25,stride*4):result.append(None);continue
         result.append(dict(camera=np.stack(row['camera']),camera_ticks=np.asarray(row['camera_ticks'],np.int32),
-            imu=np.stack(row['imu']),state=np.stack(row['state']),dt=np.array(dt,np.float32),frame_stride=np.array(stride,np.int32)))
+            imu=np.stack(row['imu']),state=np.stack(row['state']),dt=np.array(dt,np.float32),frame_stride=np.array(stride,np.int32),
+            camera_position_in_body=camera_positions[i]))
     return result
 
 

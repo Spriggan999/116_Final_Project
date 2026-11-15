@@ -16,8 +16,13 @@ sys.path.insert(0,str(WORKSPACE.parents[1]))
 
 
 def ordered_weights(model):
+    if model.settings.get('kind')=='mamba2':
+        return np.concatenate([value.detach().cpu().numpy().ravel() for value in model.state_dict().values()]).astype('<f4')
     if model.settings.get('kind')=='imu_affine':
         return np.concatenate([model.gain.detach().cpu().numpy(),model.bias.detach().cpu().numpy()]).astype('<f4')
+    if model.settings.get('kind')=='visual_imu_affine':
+        return np.concatenate([model.gain.detach().cpu().numpy(),model.bias.detach().cpu().numpy(),
+                               model.vision_weight.detach().cpu().numpy().ravel()]).astype('<f4')
     names=(['input.weight','input.bias','recurrent.weight'] if model.settings['hidden'] else [])
     names+=['head.weight','head.bias']
     state=model.state_dict()
@@ -27,10 +32,13 @@ def ordered_weights(model):
 def write_sources(model,output):
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     s=model.settings
+    if s.get('kind')=='visual_imu_affine' and (s['grid_width'],s['grid_height'],s['hidden'])!=(2,1,0):
+        raise ValueError('The native 500 profile requires its 2x1 visual grid and no hidden layer')
     weights=ordered_weights(model)
     if not np.isfinite(weights).all():raise ValueError('Student checkpoint contains nonfinite weights')
     (output/'weights.bin').write_bytes(weights.tobytes())
     header=f'''/* Generated float32 weights; C23 #embed is supported by wasi-sdk 34. */
+#define STUDENT_SSM {int(s.get('kind')=='mamba2')}
 #define GRID_WIDTH {s['grid_width']}
 #define GRID_HEIGHT {s['grid_height']}
 #define GRID_SIZE {s['grid_width']*s['grid_height']}
@@ -48,8 +56,20 @@ static const union {{ unsigned char bytes[{weights.nbytes}]; float values[{weigh
 #define WEIGHTS student_weights.values
 #endif
 '''
+    if s.get('kind')=='mamba2':
+        offsets={};offset=0
+        for name,value in model.state_dict().items():offsets[name]=offset;offset+=value.numel()
+        for name,value in offsets.items():
+            header+=f'#define W_{name.upper().replace(".","_")} (WEIGHTS+{value})\n'
+        for key,value in dict(LAYERS=s['layers'],D_STATE=s['d_state'],HEADDIM=s['headdim'],
+                ATTENTION_DIM=s['attention_dim'],ATTENTION_HEADS=s['heads'],ATTENTION_WINDOW=s['window']).items():
+            header+=f'#define {key} {value}\n'
+        names=['in_proj.weight','conv1d.weight','conv1d.bias','dt_bias','A_log','D','norm.weight','out_proj.weight']
+        rows=[[offsets[f'ssm.{i}.{name}'] for name in names]+[offsets[f'ssm_norm.{i}.weight'],offsets[f'ssm_norm.{i}.bias']] for i in range(s['layers'])]
+        header+='static const int ssm_offsets[LAYERS][10]={'+','.join('{'+','.join(map(str,row))+'}' for row in rows)+'};\n'
+        shutil.copy2(HERE/'native_ssm.h',output/'native_ssm.h')
     (output/'student_weights.h').write_text(header)
-    source='native_100.c' if s.get('kind')=='imu_affine' else 'native.c'
+    source={'imu_affine':'native_100.c','visual_imu_affine':'native_500.c'}.get(s.get('kind'),'native.c')
     shutil.copy2(HERE/source,output/'solution.c')
     native=WORKSPACE/'runtime/native'
     (output/'CMakeLists.txt').write_text(f'''cmake_minimum_required(VERSION 3.20)
@@ -59,7 +79,7 @@ set(VIOBENCH_NATIVE_DIR "{native}" CACHE PATH "VIOBench native ABI")
 include(${{VIOBENCH_NATIVE_DIR}}/viobench_reactor.cmake)
 viobench_solution(student solution.c)
 target_link_libraries(student PRIVATE m)
-target_compile_options(student PRIVATE {'-O3' if s.get('kind')=='imu_affine' else '-O2'})
+target_compile_options(student PRIVATE {'-O3' if s.get('kind') in ('imu_affine','visual_imu_affine') else '-O2'})
 ''')
     (output/'student.json').write_text(json.dumps(s,indent=2)+'\n')
     return output
@@ -72,7 +92,7 @@ def build(model,output,sdk=None):
     if not compiler.is_file():
         raise FileNotFoundError(f'wasi-sdk clang not found at {compiler}; install the VIOBench native toolchain or pass --wasi-sdk')
     module=output/'candidate.wasm'
-    optimize='-O3' if model.settings.get('kind')=='imu_affine' else '-O2'
+    optimize='-O3' if model.settings.get('kind') in ('imu_affine','visual_imu_affine') else '-O2'
     subprocess.run([str(compiler),'-std=c23',optimize,'-msimd128','-mexec-model=reactor',
                     '-I'+str(WORKSPACE/'runtime/native'),str(output/'solution.c'),'-lm',
                     '-Wl,--initial-memory=67108864','-Wl,--max-memory=2147483648',

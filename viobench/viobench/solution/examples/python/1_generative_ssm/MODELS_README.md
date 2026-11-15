@@ -460,7 +460,7 @@ sampling or prioritized experience replay.
 `distill.py --teacher DIR` accepts the main teacher's complete checkpoint set:
 use `RUN/post_sl` for the SL version or the completed run root for the PPO-selected
 version. Both the causal frame generator and state model are loaded, frozen, and
-used only on the host. Four independent student models share each training
+used only on the host. Seven independent student models share each training
 minibatch's teacher forward pass. Teacher targets are computed online in RAM;
 there is no growing disk cache or copy of the teacher weights in student runs.
 The teacher path and both checkpoint hashes are recorded for provenance.
@@ -494,8 +494,8 @@ to measure benefit; scheduling alone does not establish full GPU saturation.
 
 ### Student architectures and cadence
 
-All students request 320x240 RGB through the ABI. The 100 tier ignores that
-buffer and uses only accelerometer samples. The larger tiers sample grayscale values at
+All students request 320x240 RGB through the ABI. The 500 tier uses two grayscale
+pixels and their temporal differences plus the last accelerometer sample. The larger tiers sample grayscale values at
 fixed pixel centres. Training matches the ABI's uint8 2x2 area-average downsample
 from 640x480. Features concatenate current samples, sample differences, mean
 six-axis IMU divided by 10, and the frame interval times 20. The input width is
@@ -503,10 +503,33 @@ six-axis IMU divided by 10, and the frame interval times 20. The input width is
 
 | Tier | Visual samples | Recurrent state | Trainable parameters | Fuel cap |
 |---|---:|---:|---:|---:|
-| `100` | None | Position and velocity only; affine accelerometer model | 6 | 100 |
-| `10k` | 4x3 | None; linear correction head | 288 | 10,000 |
+| `500` | 2x1 | Position/velocity + previous two lumas; affine visual/accelerometer model | 18 | 500 |
+| `10k` | 6x3 | None; linear correction head | 396 | 10,000 |
 | `1m` | 8x6 | 192 | 58,569 | 1,000,000 |
 | `100m` | 32x24 | 1,792 | 5,994,249 | 100,000,000 |
+| `1m_ssm` | 8x6 | Official Mamba-2, width 64, one block | 34,353 (starting candidate) | 1,000,000 |
+| `1m_hybrid` | 8x6 | Official Mamba-2 + bounded attention | 51,121 (starting candidate) | 1,000,000 |
+| `100m_hybrid` | 32x24 | Official Mamba-2 + bounded attention, width 384 starting candidate | 3,924,033 (starting candidate) | 100,000,000 |
+
+The new temporal models have distinct profile names and checkpoints. Native
+deployment uses the official Mamba-2 equations ported into C, including gated
+RMS normalization, residual LayerNorm, and cached attention projections.
+Their ordered architecture search enforces 5% fuel headroom before training;
+final trained exports are checked again. Existing RNN architectures are retained.
+CUDA integration uses differentiable associative quaternion prefix products;
+its equations and gradients match the original normalized Euler integrator.
+
+The standalone distiller now defaults to a 500-epoch safety ceiling, a shared
+2–20-second horizon ramp and per-profile early stopping after eight stale fresh
+batches at the final stage. Full validation episodes select checkpoints by
+Mean Sim(3) ATE. Automatic stream grouping is measured at each new horizon and
+requires 15% estimated GPU memory headroom. See [STUDENTS_README.md](STUDENTS_README.md).
+The frozen hybrid teacher can explicitly use parallel physical integration for
+distillation while staying in FP32 evaluation mode. Its neural corrections match
+the serial path; the sampled real 20-second target differed by under 1 mm in
+position from FP32 reduction order. The original inference default is preserved.
+Per-kernel host locks protect Triton's shared autotuner state without serializing
+whole models or synchronizing CUDA streams.
 
 The recurrent students use `h = tanh(W*x + U*h + b)` at camera rate, approximately
 20 Hz. Each head emits the same nine IMU/reference-frame corrections as the
@@ -524,15 +547,15 @@ float32. Output conversion includes the supplied IMU-to-camera rotation and leve
 arm. The existing zero-velocity/near-static-gravity initialization assumptions
 remain, and the smallest model has very limited visual information and capacity.
 
-The literal 100-fuel tier uses a separate SIMD kernel and six trainable
-coefficients: `a_i = gain_i * last_accelerometer_i + bias_i`. It initializes gains
-to one and offsets to `[0, 0, -9.81]`. The frame update is `v += a*0.05`,
-`p += v*0.05`. Float32 semi-implicit Euler matches training. The supplied camera
-rotation is applied to coefficient columns/bias during init so per-frame output
-is in camera axes. Because attitude is fixed, camera lever-arm displacement and
-angular velocity are zero in this model. It ignores gyro, all images and frame
-timestamps and requires the ABI's fixed 20 Hz/ten-IMU-row contract. This is a
-restricted learned IMU motion prior, not a full attitude/visual estimator.
+The 500-fuel tier uses a separate SIMD kernel and 18 trainable coefficients:
+`a = gain * last_accelerometer + bias + W_visual * [left, right, delta_left, delta_right]`.
+Gains start at one, bias at `[0,0,-9.81]`, and visual weights at zero. The two
+RGB pixel means are normalized to [0,1]. The frame update is `v += a*0.05`,
+`p += v*0.05`. Camera rotation and grayscale scaling are folded into coefficient
+columns during init. Attitude remains fixed; gyro is omitted. It supports an
+empty first IMU packet, followed by ten-row packets at 20 Hz. It replaces the
+100-fuel default; legacy six-parameter checkpoint export is retained. The new
+profile measured 150/500 fuel over 1,200 frames with nonzero visual weights.
 
 ### Distillation objective and checkpoint selection
 
@@ -549,19 +572,18 @@ are averaged over each camera interval. Default training loss is:
 Correction SmoothL1 uses beta 0.05. `state_loss` is the existing weighted
 position/velocity/geodesic-rotation/angular-velocity objective. The weights are
 CLI overrides, not experimentally tuned constants. Validation selects each
-student using its held-out ground-truth state loss, independently of the other
-tiers. The expensive teacher is not run during ground-truth-only validation.
-Neither this validation loss nor short-window trajectory matching is the
-full-episode Mean Sim(3) ATE score.
+student using complete held-out trajectory Mean Sim(3) ATE, independently of the
+other tiers. Ground-truth state loss is also logged. The expensive teacher is
+not run during ground-truth-only validation.
 
-For `100`, the imitation term instead matches the student's affine acceleration
+For `500`, the imitation term instead matches the student's visual/IMU acceleration
 to finite differences of teacher velocity at camera ticks, divided by their
 time interval. It retains the same trajectory/ground-truth terms. Student-only
-camera preprocessing is skipped when this is the only active tier; the frozen
-teacher still consumes images to produce its targets. These student runs use
+camera preprocessing is retained for its two visual samples. The frozen
+teacher also consumes images to produce its targets. These student runs use
 supervised knowledge distillation, without an additional PPO stage.
 
-Default maximum training length is 100 actual epochs, with patience of 8
+Default maximum training length is 500 actual epochs, with patience of 8
 non-improving fresh recording batches (epochs in fixed-data mode). Streaming uses
 the same bounded producer, fixed validation, three-pass reuse cap and fresh-batch
 patience helper as teacher SL. Models that early-stop retain their own best
@@ -570,7 +592,7 @@ patience helper as teacher SL. Models that early-stop retain their own best
 ### Native export and measured fuel
 
 `python -m students.export` embeds float32 weights with C23 `#embed` and compiles
-the ABI reactor with wasi-sdk 34 and SIMD: `-O3` for the 100 tier, `-O2` for the
+the ABI reactor with wasi-sdk 34 and SIMD: `-O3` for the 500 tier and legacy 100 export, `-O2` for the
 larger tiers. Generated C and weights stay
 beside the artifact for inspection. The standalone module has no Python/OpenCV
 runtime. A local Python identity solution used roughly 87K–214K fuel/frame, which
@@ -583,7 +605,11 @@ records the module/weight hashes and measurements; `submission_limits.json`
 sets the corresponding cap for real benchmark evaluation. A failure preserves
 the trained checkpoint so export can be diagnosed or retried separately.
 
-Resource probes passed all 1,200 frames, using random weights (seed 1701) for
+The following four-tier probes are historical and predate the new 500 profile.
+Its current [500-fuel resource check](verification/student_500_resources.json)
+passed 1,200 frames at 150 fuel/frame. No timing benchmark was repeated.
+
+Historical resource probes passed all 1,200 frames, using random weights (seed 1701) for
 the neural tiers and explicit nonzero affine coefficients for the 100 tier:
 
 | Tier/report | Peak fuel/frame | Module size | Episode test time |
@@ -961,7 +987,8 @@ can change resource use and accuracy. Re-run verification and real evaluation.
 | `distillation_pipeline.py` | Bounded target prefetch and independent student CUDA streams |
 | `students/model.py` | Compact student networks, camera features and differentiable quaternion integration |
 | `students/native.c`, `students/export.py` | Native ABI inference, weight embedding, compilation and exact-tier resource gates |
-| `students/native_100.c` | Image-free six-parameter SIMD motion model for the literal 100-fuel tier |
+| `students/native_500.c` | Minimal 18-parameter visual/IMU SIMD motion model for the 500-fuel tier |
+| `students/native_100.c` | Legacy six-parameter checkpoint export only |
 | `tests/` | Numerical, data-lifecycle, training/export and resource-check regressions |
 
 ## Current limitations and evaluation needs

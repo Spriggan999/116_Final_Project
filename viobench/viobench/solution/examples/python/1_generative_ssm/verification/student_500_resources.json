@@ -1,0 +1,52 @@
+{
+  "module": "/tmp/hyperdrone-500-quick-check/student.wasm",
+  "module_sha256": "353a77ce8f737b4a5e847ba3969564d76b3c8a252d15e5b5e6035a3ac3b35546",
+  "bytes": 21643,
+  "frames_requested": 1200,
+  "frames_completed": 1200,
+  "simulated_duration_seconds": 60.0,
+  "limits": {
+    "init_fuel": 200000000000,
+    "step_fuel": 500,
+    "memory_bytes": 2147483648,
+    "table_elements": 1048576,
+    "init_wall_seconds": 300.0,
+    "step_wall_seconds": 60.0
+  },
+  "max_upload_bytes": 134217728,
+  "episode_timeout_seconds": 1440,
+  "passed": true,
+  "fuel_step_max": 150,
+  "wall_step_seconds_max": 0.00011131999781355262,
+  "memory_bytes_observed_max": 67108864,
+  "width": 320,
+  "height": 240,
+  "fuel_init": 11893,
+  "wall_init_seconds_reported": 4.494799941312522e-05,
+  "elapsed_seconds": 1.538495733999298,
+  "profile_kind": "student resource check; not an accuracy evaluation",
+  "weights_sha256": "377152d92ebb2636c6766ca03de372b7fcafdeaf34c6526bfa4a27bd5638db47",
+  "date": "2026-11-14",
+  "profile": "500",
+  "parameters": 18,
+  "vision_samples": 2,
+  "visual_features": [
+    "left_luma",
+    "right_luma",
+    "delta_left_luma",
+    "delta_right_luma"
+  ],
+  "imu_features": [
+    "last_ax",
+    "last_ay",
+    "last_az"
+  ],
+  "runtime_benchmarked": false,
+  "verification": "Nonzero visual weights; 1,200-frame fuel check plus focused gradient, Torch/WASM parity and concurrent CUDA-update tests.",
+  "source_sha256": {
+    "students/model.py": "5622cd15aeb5d852286df6e8f7042cc165dd71c7be8d26b4543cad1d4dd3df26",
+    "students/native_500.c": "c748fbff2f55d1ca6dd0345959b65afb8161858f5dd083a81309c6d789c819d2",
+    "students/export.py": "30a0cbf0322d1ef61c43248448d411ef5b67640d11563bffb208ae1f55d7d4b6",
+    "distill.py": "485cfc3da67b467bdfe3f534286a9af53a3b4d43c7ed1d9d92be669d5513555e"
+  }
+}

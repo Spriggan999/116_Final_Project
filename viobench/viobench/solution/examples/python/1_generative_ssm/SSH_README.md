@@ -43,6 +43,25 @@ inside this session. The same applies to a training command wrapped in
 `timeout` for a scheduled cutoff. Start the run inside `tmux` from the beginning;
 creating a session later does not move an existing process into it.
 
+## Distill the teacher into all seven students
+
+Create a separate session with `tmux new -s student-distill`. After activating
+`myenv` and entering `1_generative_ssm` as above, run:
+
+```bash
+bash distill_students.sh
+```
+
+This selects the fastest measured safe serial/mixed/parallel student schedule,
+uses the completed `20261113-192121-curriculum-tujmpo0u` teacher by default, and
+logs all seven profiles online to W&B. The terminal prints the W&B URL, unique
+checkpoint directory and adjacent console `.log` path. Pass `--teacher DIR`
+to select another completed teacher. It uses a 500-epoch ceiling with independent
+early stopping and exports verified WASM files after training.
+
+Detach with Ctrl+B then D; reconnect with `tmux attach -t student-distill`.
+See [the student guide](STUDENTS_README.md) for options, storage and evaluation.
+
 ## Fresh curriculum run with automatic checkpoint copying
 
 Inside tmux, after activating `myenv` and entering the model directory:

@@ -99,7 +99,7 @@ def test_pipeline_matches_serial_updates_and_independent_profile_stopping(monkey
     if device=='cuda' and not torch.cuda.is_available():pytest.skip('CUDA unavailable')
     torch.set_num_threads(1);torch.manual_seed(17)
     monkeypatch.setattr(cfg,'USE_AMP',False)
-    profiles=list(PROFILES) if device=='cuda' else ['100','10k','1m']
+    profiles=list(PROFILES) if device=='cuda' else ['500','10k','1m']
     initial={name:BudgetStudent(PROFILES[name]) for name in profiles}
     # Prepare copies on the producer stream to exercise cross-stream tensor ownership.
     sources=[payload('cpu') for _ in range(3)]
@@ -119,12 +119,14 @@ def test_pipeline_matches_serial_updates_and_independent_profile_stopping(monkey
         losses=[];frozen=None
         with DistillationPipeline(device,profiles,parallel) as pipeline:
             assert pipeline.parallel==(parallel and device=='cuda')
+            if pipeline.parallel:
+                pipeline.groups=[['100m'],[name for name in profiles if name!='100m']]
             with pipeline.batches(sources,prepare) as batches:
                 for step,prepared in enumerate(batches):
-                    active=students if step<2 else {name:row for name,row in students.items() if name!='100'}
+                    active=students if step<2 else {name:row for name,row in students.items() if name!='500'}
                     losses.append(pipeline.run(active,prepared,partial(train_student,device=device,weights=(1.,.5,1.))))
-                    if step==1:frozen=deepcopy(students['100']['model'].state_dict())
-            for key,value in frozen.items():torch.testing.assert_close(students['100']['model'].state_dict()[key],value,rtol=0,atol=0)
+                    if step==1:frozen=deepcopy(students['500']['model'].state_dict())
+            for key,value in frozen.items():torch.testing.assert_close(students['500']['model'].state_dict()[key],value,rtol=0,atol=0)
             with pipeline.batches(sources,lambda source:prepare(source)[:2]) as batches:
                 validation=[pipeline.run(students,batch,partial(validate_student,device=device)) for batch in batches]
         return students,losses,validation
@@ -132,7 +134,10 @@ def test_pipeline_matches_serial_updates_and_independent_profile_stopping(monkey
     parallel,parallel_losses,parallel_validation=run(True)
     for name in profiles:
         for key,value in serial[name]['model'].state_dict().items():
-            torch.testing.assert_close(parallel[name]['model'].state_dict()[key],value,atol=2e-6,rtol=2e-5)
+            # Official scan backward uses floating-point parallel reductions;
+            # Adam can amplify their rounding when a gradient is close to zero.
+            tolerance=1e-5 if PROFILES[name].get('kind')=='mamba2' else 2e-6
+            torch.testing.assert_close(parallel[name]['model'].state_dict()[key],value,atol=tolerance,rtol=2e-5)
     for expected,actual in zip(serial_losses+serial_validation,parallel_losses+parallel_validation):
         assert actual==pytest.approx(expected,rel=2e-5,abs=2e-6)
     for before,after in zip(snapshots,sources):

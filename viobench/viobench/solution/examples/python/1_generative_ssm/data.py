@@ -50,11 +50,14 @@ class EpisodeStore:
                 imu=torch.from_numpy(n['imu'][:,:6].copy()).float()
                 ticks=torch.from_numpy(n['camera_ticks'].copy()).long()
                 stride=int(n['frame_stride']); dt=float(n['dt'])
+                camera_position=torch.from_numpy(np.asarray(n.get('camera_position_in_body',np.zeros(3)),np.float32).copy())
+                camera_calibration_available='camera_position_in_body' in n
                 assert ticks[0]==0 and torch.all(ticks[1:] - ticks[:-1]==stride), (f,ticks)
                 assert state.shape[0]==imu.shape[0] and ticks[-1]<state.shape[0]
                 assert abs(dt-.005)<.001
                 assert torch.isfinite(state).all() and torch.isfinite(imu).all()
-                self.entries.append(dict(cams=cams,cam_ticks=ticks,imu=imu,state=state,
+                self.entries.append(dict(cams=cams,cam_ticks=ticks,imu=imu,state=state,camera_position_in_body=camera_position,
+                    camera_calibration_available=camera_calibration_available,
                     stride=stride,dt=dt,file=str(f),scene_id=int(n['scene_id']) if 'scene_id' in n else str(f)))
         if not self.entries: raise ValueError('No recorded files. Run the collector first.')
 
@@ -99,7 +102,10 @@ class StateWindows(Dataset):
         if not self.items: raise RuntimeError('No state windows. Increase HD_STEPS or reduce WINDOW.')
     def __len__(self):return len(self.items)
     def __getitem__(self,idx):
-        eidx,start=self.items[idx];e=self.store.entries[eidx];T=self.length
+        return self.window(self.items[idx],self.length,idx)
+
+    def window(self,item,length,cache_index=None):
+        eidx,start=item;e=self.store.entries[eidx];T=length
         stride=e['stride']
         raw=e['state'][start:start+T]
         p=raw[:,:3];R=raw[:,3:12].reshape(-1,3,3);v=raw[:,12:15];omega=raw[:,15:18]
@@ -147,15 +153,33 @@ class StateWindows(Dataset):
                     prev_img_idx=prev_img_idx,prev_span=prev_span.float(),
                     anchor_tick=anchor_tick,observed=observed,
                     imu=imu,pos=pos,vel=vel,rot=rot,omega=omega,
-                    gravity=g_hat,dt=torch.tensor(e['dt'],dtype=torch.float32))
+                    gravity=g_hat,dt=torch.tensor(e['dt'],dtype=torch.float32),
+                    episode_id=torch.tensor(eidx),episode_complete=torch.tensor(start==0 and T-1==int(e['cam_ticks'][-1])),
+                    camera_position_in_body=e.get('camera_position_in_body',torch.zeros(3)),
+                    camera_calibration_available=torch.tensor(e.get('camera_calibration_available',False)))
         if self.cached_frames is not None:
             # A read-only .npy mmap. Copy to a writable tensor for DataLoader.
             result['frames_cached']=torch.from_numpy(
-                np.asarray(self.cached_frames[idx]).copy())
+                np.asarray(self.cached_frames[cache_index]).copy())
             for k in ('cam_images','anchor_img_idx','prev_img_idx',
                       'prev_span','anchor_tick'):
                 result.pop(k,None)
         return result
+
+
+class StateEpisodes(StateWindows):
+    """One uninterrupted trajectory per recording, through its last camera capture.
+
+    Evaluation batches have size one so recordings can have different lengths.
+    The loss/curriculum window loaders keep their existing sampling unchanged.
+    """
+    def __init__(self,store,compact_cameras=True):
+        self.store=store;self.compact_cameras=compact_cameras;self.cached_frames=None
+        self.items=[(i,0) for i in range(len(store.entries))]
+
+    def __getitem__(self,idx):
+        item=self.items[idx]
+        return self.window(item,int(self.store.entries[item[0]]['cam_ticks'][-1])+1)
 
 @torch.no_grad()
 def generate_200hz_frames(model,b,device):

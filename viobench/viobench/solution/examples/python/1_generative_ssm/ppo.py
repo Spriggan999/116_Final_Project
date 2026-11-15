@@ -226,9 +226,11 @@ def ppo_update(student, critic, reference_head, optimizer, rollout, cfg):
     return dict(approx_kl=last_kl, updates=updates)
 
 
-def validation_loss(frame_model, student, loader, device, *, return_metrics=False):
+def validation_loss(frame_model, student, loader, device, *, return_metrics=False,episode_loader=None):
     total, count = 0., 0
-    ate_totals=[]
+    if return_metrics:
+        from leaderboard_metrics import LeaderboardATE,finish_ate
+        ate=LeaderboardATE()
     student.eval()
     with torch.no_grad(),amp_disabled():
         for batch in loader:
@@ -238,8 +240,7 @@ def validation_loss(frame_model, student, loader, device, *, return_metrics=Fals
             value,_ = losses(prediction,batch,device,metrics=False)
             n = len(frames)
             if return_metrics:
-                from losses import mean_ate
-                ate_totals.append(mean_ate(prediction['pos'],batch['pos'].to(device,non_blocking=True))*n)
+                ate.update(prediction,batch)
             total += float(value)*n
             count += n
     if not count:
@@ -248,7 +249,7 @@ def validation_loss(frame_model, student, loader, device, *, return_metrics=Fals
     if not math.isfinite(result):
         raise ValueError('Nonfinite PPO validation loss')
     if return_metrics:
-        return result,dict(mean_ate_m=float(torch.stack(ate_totals).sum()/count))
+        return result,finish_ate(frame_model,student,device,ate,episode_loader)
     return result
 
 
@@ -303,9 +304,10 @@ class WindowCurriculum:
 
 def refine_ppo(frame_model, student, data, cfg, output, save_weights):
     import wandb
+    from leaderboard_metrics import ATE_CONFIG
     with wandb.init(project=cfg.WANDB_PROJECT,dir=str(output),job_type='ppo_refinement',mode=cfg.WANDB_MODE,
                     config=dict(iterations=cfg.PPO_ITERATIONS,rollout_batches=cfg.PPO_ROLLOUT_BATCHES,
-                                lr=cfg.PPO_LR,windows=cfg.PPO_CURRICULUM_WINDOWS)) as tracker:
+                                lr=cfg.PPO_LR,windows=cfg.PPO_CURRICULUM_WINDOWS,**ATE_CONFIG)) as tracker:
         return _refine_ppo(frame_model,student,data,cfg,output,save_weights,tracker)
 
 
@@ -333,7 +335,8 @@ def _refine_ppo(frame_model, student, data, cfg, output, save_weights, tracker):
     validation_loader = data.ppo_loader(curriculum.windows[-1], validation=True)
     if data.curriculum is not None:
         data.curriculum_validation_loader=validation_loader
-    best,baseline_metrics = validation_loss(frame_model,student,validation_loader,cfg.DEVICE,return_metrics=True)
+    best,baseline_metrics = validation_loss(frame_model,student,validation_loader,cfg.DEVICE,return_metrics=True,
+                                           episode_loader=getattr(data,'val_episode_loader',None))
     selected_mean_ate=baseline_metrics['mean_ate_m']
     baseline = best
     curriculum.reference = None if curriculum.stage_scores else baseline
@@ -352,7 +355,8 @@ def _refine_ppo(frame_model, student, data, cfg, output, save_weights, tracker):
         diagnostics = ppo_update(student,critic,reference_head,optimizer,rollout,cfg)
         del rollout
         performance=record_epoch(output,'ppo',iteration+1,timer.result(),data,loader=loader)
-        score,validation_metrics = validation_loss(frame_model,student,validation_loader,cfg.DEVICE,return_metrics=True)
+        score,validation_metrics = validation_loss(frame_model,student,validation_loader,cfg.DEVICE,return_metrics=True,
+                                                  episode_loader=getattr(data,'val_episode_loader',None))
         selected = score < best
         if selected:
             best = score
@@ -368,6 +372,9 @@ def _refine_ppo(frame_model, student, data, cfg, output, save_weights, tracker):
                               progress_validation_loss=progress_score))
         record = dict(iteration=iteration+1,mean_reward=reward,validation_loss=score,
                       val_mean_ate_m=validation_metrics['mean_ate_m'],
+                      val_sim3_ate_rmse_mean=validation_metrics['sim3_ate_rmse_mean'],
+                      val_ate_episodes=validation_metrics['ate_episodes'],
+                      val_ate_camera_calibrated_episodes=validation_metrics['ate_camera_calibrated_episodes'],
                       sl_val_mean_ate_m=baseline_metrics['mean_ate_m'],
                       selected_val_mean_ate_m=selected_mean_ate,
                       window_samples=length,next_window_samples=curriculum.length,

@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-14",
+  "scope": "Focused scheduler/launcher checks; no full distillation run launched",
+  "strategies": [
+    "serial student updates with teacher prefetch",
+    "uniform groups of 1/2/3/4/all",
+    "cost-balanced pairs",
+    "isolate slowest student",
+    "isolate two slowest students"
+  ],
+  "selection": "lowest measured safe update time; at least 15% estimated VRAM headroom",
+  "retune_on": [
+    "curriculum horizon changes",
+    "active profile set changes after early stopping"
+  ],
+  "checks": {
+    "schedule_launcher_and_multi_student_cuda_rollback_passed": 4,
+    "seven_student_selective_vs_serial_cuda_passed": 1,
+    "shell_syntax": "passed",
+    "pyflakes": "passed"
+  },
+  "source_sha256": {
+    "distillation_pipeline.py": "704a65f909765aa22015b66fd797a1714cb8008569fb38a83e6c84e6aac1a41f",
+    "distill.py": "27a1eac09fbc2b21faf149cf0c47744c3c78817a8640a89ecf3205f41ef2ad91",
+    "distill_students.sh": "dda16d723cca025e84886dc2bc421a8d98b69d215e727eefdc07726d3c12e350"
+  }
+}

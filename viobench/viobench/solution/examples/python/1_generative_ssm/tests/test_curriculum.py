@@ -507,6 +507,9 @@ train.main()
         points=[row for row in logged if f'{prefix}/val_mean_ate_m' in row]
         assert points and all(np.isfinite(row[f'{prefix}/val_mean_ate_m']) and
                               row[f'{prefix}/val_mean_ate_m']>=0 for row in points)
+        assert all(row[f'{prefix}/val_mean_ate_m']==row[f'{prefix}/val_sim3_ate_rmse_mean'] for row in points)
+        assert all(row[f'{prefix}/val_ate_episodes']==1 for row in points)
+        assert all(not any('unaligned_mean_ate' in key for key in row) for row in points)
     curriculum_points=[row for row in logged if 'curriculum/phase_epoch' in row]
     assert len(curriculum_points)==len(rows)
     for row in curriculum_points:

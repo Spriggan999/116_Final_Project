@@ -24,6 +24,8 @@ def require_official_mamba(device=None):
     except ImportError as error:
         raise ImportError('Official Mamba-2 is required for the hybrid. Install '
                           'requirements-mamba.txt in a compatible CUDA environment.') from error
+    from mamba_runtime import protect_official_launchers
+    protect_official_launchers()
     return Mamba2
 
 
@@ -376,14 +378,15 @@ class HybridStateStudent(nn.Module):
             attended=local_attention(self.attn,x,self.attn_window,getattr(cfg,'HYBRID_ATTENTION_CHUNK',512))
             return self.attn_norm(x+attended)
 
-    def forward(self,frames,imu,observed,dt,gravity,return_corrections=False):
+    def forward(self,frames,imu,observed,dt,gravity,return_corrections=False,*,parallel_physics=None):
         from contextlib import nullcontext
         tokens=self.encode_tokens(frames,imu,observed,dt)
         with neural_autocast(tokens) if self.training else nullcontext():
             corrections=(.25*torch.tanh(self.out(tokens))).float()
         # The same physical integrator as the GRU student.
-        result=integrate_corrections(corrections,imu,dt,gravity,
-                                    parallel=self.training and frames.is_cuda and getattr(cfg,'PARALLEL_TRAINING_PHYSICS',False))
+        use_parallel=(self.training and getattr(cfg,'PARALLEL_TRAINING_PHYSICS',False)
+                      if parallel_physics is None else parallel_physics)
+        result=integrate_corrections(corrections,imu,dt,gravity,parallel=frames.is_cuda and use_parallel)
         if not return_corrections:
             result.pop('corrections')
         return result

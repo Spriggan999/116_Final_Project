@@ -63,6 +63,16 @@ def test_flights_can_exceed_informational_limit_and_still_stop_crashes():
     assert [len(row['state']) for row in rows] == [30,81]
 
 
+def test_collector_records_per_flight_camera_positions():
+    class MountedFlights(Flights):
+        def instance_parameters(self):
+            return [dict(cameras=dict(front=dict(mount=dict(pose=dict(position=position)))))
+                    for position in ([.1,.2,.3],[.4,.5,.6])]
+    rows=collect_round(MountedFlights(),41)
+    np.testing.assert_allclose(rows[0]['camera_position_in_body'],[.1,.2,.3])
+    np.testing.assert_allclose(rows[1]['camera_position_in_body'],[.4,.5,.6])
+
+
 @pytest.mark.parametrize('channels_first',[False,True])
 def test_frame_layouts_preserve_instance_and_first_camera(channels_first):
     x=np.zeros((2,2,8,12,4),np.uint8)

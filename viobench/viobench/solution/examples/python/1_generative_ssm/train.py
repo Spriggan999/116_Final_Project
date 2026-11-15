@@ -260,7 +260,8 @@ def run_training(args, cfg, stack):
     import wandb
     from models import GenerativeFlowPredictor, MotionWarp, StateStudent, HybridStateStudent, StateTeacher,EmbeddingPredictor
     from data import state_input_frames,frame_pair_images
-    from losses import losses, mean_ate
+    from losses import losses
+    from leaderboard_metrics import LeaderboardATE,finish_ate,ATE_CONFIG
     from streaming import FreshBatchPatience, TrainingData
     from performance import amp_disabled,EpochTimer,record_epoch,adamw,timed_batches,pipeline_log
     data = TrainingData(args, cfg, stack)
@@ -499,7 +500,7 @@ def run_training(args, cfg, stack):
                     window=cfg.WINDOW,max_epochs=cfg.EPOCHS_STUDENT,
                     lr=cfg.LR_STUDENT,patience=cfg.PATIENCE_STUDENT,
                     rgb_hz='approximately 20 from causal native captures',imu_hz=200,
-                    velocity_target='change relative to window initial velocity'))
+                    velocity_target='change relative to window initial velocity',**ATE_CONFIG))
     best_state=float('inf');bad_state_epochs=0;best_state_epoch=0
     state_patience=FreshBatchPatience()
     data.begin_phase('state')
@@ -520,15 +521,17 @@ def run_training(args, cfg, stack):
             tr.append(loss.detach()*len(frames));timer.add(len(frames))
         performance=timer.result()
         performance=record_epoch(args.out,'state',epoch+1,performance,data,loader=train_state_loader)
-        student.eval();ev=[];metrics=[];validation_count=0
+        student.eval();ev=[];metrics=[];validation_count=0;ate=LeaderboardATE()
         with torch.no_grad(),amp_disabled():
             for b in val_state_loader:
                 frames=state_input_frames(frame_student,b,cfg.DEVICE)
                 p=student(frames,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                           b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
                 loss,m=losses(p,b,cfg.DEVICE)
+                ate.update(p,b)
                 n=len(frames);ev.append(loss.detach()*n);validation_count+=n;metrics.append((m,n))
         train_loss=float(torch.stack(tr).sum()/performance['samples']);val_loss=float(torch.stack(ev).sum()/validation_count)
+        trajectory_metrics=finish_ate(frame_student,student,cfg.DEVICE,ate,data.val_episode_loader)
         from ppo import validation_loss as curriculum_validation
         promoted=data.finish_curriculum_epoch(val_loss,
             lambda loader:curriculum_validation(frame_student,student,loader,cfg.DEVICE))
@@ -549,6 +552,7 @@ def run_training(args, cfg, stack):
                      'student/loader_wait_seconds':performance['loader_wait_seconds']})
         logs.update(data.curriculum_log())
         logs.update(pipeline_log(performance))
+        logs.update({'student/val_'+k:v for k,v in trajectory_metrics.items()})
         for k in metrics[0][0]:
             value=sum((m[k]**2 if k.endswith('rmse') else m[k])*n for m,n in metrics)/validation_count
             logs['student/val_'+k]=float(np.sqrt(value) if k.endswith('rmse') else value)
@@ -584,7 +588,7 @@ def run_training(args, cfg, stack):
         run=wandb.init(project=cfg.WANDB_PROJECT,dir=str(args.out),job_type='teacher_training',mode=cfg.WANDB_MODE,
                        config={'teacher_backbone':cfg.TEACHER_BACKBONE,'student_backbone':cfg.BACKBONE_NAME,
                                'learned_visual':cfg.USE_LEARNED_VISUAL_ENCODER,'hidden':cfg.TEACHER_HIDDEN,'frame_model':cfg.FRAME_MODEL_NAME,'lr':cfg.LR_TEACHER,
-                               'max_epochs':cfg.EPOCHS_TEACHER})
+                               'max_epochs':cfg.EPOCHS_TEACHER,**ATE_CONFIG})
         best=float('inf');bad_teacher_epochs=0;best_teacher_epoch=0
         teacher_patience=FreshBatchPatience()
         data.begin_phase('teacher')
@@ -603,15 +607,16 @@ def run_training(args, cfg, stack):
                 nn.utils.clip_grad_norm_(teacher.parameters(),1.)
                 opt.step();n=len(frames);tl.append(loss.detach()*n);train_count+=n;timer.add(n)
             performance=record_epoch(args.out,'teacher',epoch+1,timer.result(),data,loader=train_state_loader)
-            teacher.eval();vl=[];val_ate=[];val_count=0
+            teacher.eval();vl=[];val_count=0;ate=LeaderboardATE()
             with torch.no_grad(),amp_disabled():
                 for b in val_state_loader:
                     f=state_input_frames(frame_student,b,cfg.DEVICE)
                     p=teacher(f,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                               b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
                     n=len(b['imu']);vl.append(losses(p,b,cfg.DEVICE,metrics=False)[0].detach()*n);val_count+=n
-                    val_ate.append(mean_ate(p['pos'],b['pos'].to(cfg.DEVICE,non_blocking=True))*n)
+                    ate.update(p,b)
             mean_train=float(torch.stack(tl).sum()/train_count);mean_val=float(torch.stack(vl).sum()/val_count)
+            trajectory_metrics=finish_ate(frame_student,teacher,cfg.DEVICE,ate,data.val_episode_loader)
             promoted=data.finish_curriculum_epoch(mean_val,
                 lambda loader:curriculum_validation(frame_student,teacher,loader,cfg.DEVICE))
             data.step_scheduler(teacher_scheduler,mean_val)
@@ -621,10 +626,10 @@ def run_training(args, cfg, stack):
                 save_weights(teacher.state_dict(),cfg.TEACHER_CHECKPOINT)
             bad_teacher_epochs=data.update_patience(teacher_patience,improved,promoted)
             run.log({'teacher/train_loss':mean_train,'teacher/val_loss':mean_val,
-                     'teacher/val_mean_ate_m':float(torch.stack(val_ate).sum()/val_count),
                      'teacher/epoch':epoch+1,'teacher/lr':opt.param_groups[0]['lr'],
                      'teacher/best_val_loss':best,'teacher/non_improving_data_cycles':bad_teacher_epochs,
-                     'teacher/early_stopping_grace_remaining':teacher_patience.grace_remaining}|data.curriculum_log()|pipeline_log(performance))
+                     'teacher/early_stopping_grace_remaining':teacher_patience.grace_remaining}|
+                    {'teacher/val_'+k:v for k,v in trajectory_metrics.items()}|data.curriculum_log()|pipeline_log(performance))
             print(f'Teacher {epoch+1}/{cfg.EPOCHS_TEACHER}: {mean_train:.5f}/{mean_val:.5f}')
             if bad_teacher_epochs>=cfg.PATIENCE_TEACHER:
                 print('Teacher early stopped; best epoch:',best_teacher_epoch)
@@ -642,7 +647,7 @@ def run_training(args, cfg, stack):
             opt,mode='min',factor=cfg.LR_SCHEDULER_FACTOR,patience=cfg.LR_SCHEDULER_PATIENCE)
         run=wandb.init(project=cfg.WANDB_PROJECT,dir=str(args.out),job_type='student_distillation',mode=cfg.WANDB_MODE,
                        config={'teacher_backbone':cfg.TEACHER_BACKBONE,'student_backbone':cfg.BACKBONE_NAME,
-                               'lr':cfg.LR_DISTILL,'max_epochs':cfg.EPOCHS_DISTILL})
+                               'lr':cfg.LR_DISTILL,'max_epochs':cfg.EPOCHS_DISTILL,**ATE_CONFIG})
         best_distill=float('inf');bad_distill_epochs=0;best_distill_epoch=0
         distill_patience=FreshBatchPatience()
         data.begin_phase('distill')
@@ -665,15 +670,16 @@ def run_training(args, cfg, stack):
                 nn.utils.clip_grad_norm_(student.parameters(),1.)
                 opt.step();n=len(frames);tr.append(loss.detach()*n);train_count+=n;timer.add(n)
             performance=record_epoch(args.out,'distill',epoch+1,timer.result(),data,loader=train_state_loader)
-            student.eval();vl=[];val_ate=[];val_count=0
+            student.eval();vl=[];val_count=0;ate=LeaderboardATE()
             with torch.no_grad(),amp_disabled():
                 for b in val_state_loader:
                     frames=state_input_frames(frame_student,b,cfg.DEVICE)
                     p=student(frames,b['imu'].to(cfg.DEVICE,non_blocking=True),b['observed'].to(cfg.DEVICE,non_blocking=True),
                               b['dt'].to(cfg.DEVICE,non_blocking=True),b['gravity'].to(cfg.DEVICE,non_blocking=True))
                     n=len(b['imu']);vl.append(losses(p,b,cfg.DEVICE,metrics=False)[0].detach()*n);val_count+=n
-                    val_ate.append(mean_ate(p['pos'],b['pos'].to(cfg.DEVICE,non_blocking=True))*n)
+                    ate.update(p,b)
             val=float(torch.stack(vl).sum()/val_count)
+            trajectory_metrics=finish_ate(frame_student,student,cfg.DEVICE,ate,data.val_episode_loader)
             promoted=data.finish_curriculum_epoch(val,
                 lambda loader:curriculum_validation(frame_student,student,loader,cfg.DEVICE))
             data.step_scheduler(distill_scheduler,val)
@@ -683,11 +689,11 @@ def run_training(args, cfg, stack):
                 save_weights(student.state_dict(),str(args.out / 'state_student_distilled.pt'))
             bad_distill_epochs=data.update_patience(distill_patience,improved,promoted)
             run.log({'distill/train_loss':float(torch.stack(tr).sum()/train_count),'distill/val_loss':val,
-                     'distill/val_mean_ate_m':float(torch.stack(val_ate).sum()/val_count),
                      'distill/lr':opt.param_groups[0]['lr'],'distill/epoch':epoch+1,
                      'distill/best_val_loss':best_distill,
                      'distill/non_improving_data_cycles':bad_distill_epochs,
-                     'distill/early_stopping_grace_remaining':distill_patience.grace_remaining}|data.curriculum_log()|pipeline_log(performance))
+                     'distill/early_stopping_grace_remaining':distill_patience.grace_remaining}|
+                    {'distill/val_'+k:v for k,v in trajectory_metrics.items()}|data.curriculum_log()|pipeline_log(performance))
             print(f'Distill {epoch+1}/{cfg.EPOCHS_DISTILL}: train={float(torch.stack(tr).sum()/train_count):.5f}, val={val:.5f}')
             if bad_distill_epochs>=cfg.PATIENCE_DISTILL:
                 print('Distillation early stopped; best epoch:',best_distill_epoch)
