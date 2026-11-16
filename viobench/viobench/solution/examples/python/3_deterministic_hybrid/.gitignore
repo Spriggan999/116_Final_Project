@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+benchmark_60s/
+benchmark_smoke/
+verification/
+training/*.so
+training/*.npz
+fresh_training/
