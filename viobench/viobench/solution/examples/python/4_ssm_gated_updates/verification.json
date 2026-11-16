@@ -1,0 +1,50 @@
+{
+  "environment": "myenv: PyTorch 2.15.0+cu132; torch.cuda.is_available() == False; no NVIDIA device nodes",
+  "tests": {
+    "command": "python -m unittest discover -s 4_ssm_gated_updates/tests -v",
+    "total": 13,
+    "passed": 12,
+    "skipped": 1,
+    "skipped_reason": "CUDA scheduling test requires accessible GPU"
+  },
+  "smoke": {
+    "all_four_cpu_training": "passed",
+    "staged_curriculum_and_fixed_probes": "passed",
+    "latest_optimizer_rng_curriculum_resume_to_epoch_2": "passed",
+    "standalone_procthor_evaluation": "passed",
+    "synthetic_complete_1200_frame_public_replay": "passed",
+    "real_public_dataset_evaluation": "not run: no trained real-data checkpoints; network unavailable",
+    "cuda_timing_and_winner": "not measured: GPU inaccessible",
+    "procThor_public_headlines_separate": "verified ProcTHOR JSONL names and standalone summary; public full-flight scoring tested synthetically"
+  },
+  "limitations": [
+    "Synthetic small-image/short-window checks establish execution, not trained accuracy.",
+    "CUDA schedule selection measures real optimizer updates on the target GPU before production updates."
+  ],
+  "cpu_smoke_summary": {
+    "baseline": {
+      "validation_loss": 0.0006135959411039948,
+      "sim3_ate_rmse_m": 0.002241925974331552,
+      "unaligned_ate_rmse_m": 0.0124155493581808,
+      "episodes": 1
+    },
+    "aux_jepa": {
+      "validation_loss": 0.0006236323388293386,
+      "sim3_ate_rmse_m": 0.002280563364434922,
+      "unaligned_ate_rmse_m": 0.012421202522504374,
+      "episodes": 1
+    },
+    "innovation": {
+      "validation_loss": 0.0006127744563855231,
+      "sim3_ate_rmse_m": 0.002238423854811726,
+      "unaligned_ate_rmse_m": 0.012414095171782859,
+      "episodes": 1
+    },
+    "combined": {
+      "validation_loss": 0.0006227700505405664,
+      "sim3_ate_rmse_m": 0.0022773892875687053,
+      "unaligned_ate_rmse_m": 0.01241968043491305,
+      "episodes": 1
+    }
+  }
+}
