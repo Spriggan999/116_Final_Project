@@ -64,6 +64,12 @@
 #ifndef N_TRACK
 #define N_TRACK 20             // tracked patches per window
 #endif
+#ifndef RANK_FAST
+#define RANK_FAST 1            // bounded-cost top-K selection of the candidate cells (flattens the ranking frame)
+#endif
+#ifndef SUB_CAP
+#define SUB_CAP 7              // max templates per subset: caps the catch-up after texture failures (fuel spike)
+#endif
 #ifndef N_EXTRA
 #define N_EXTRA 8              // extra candidates examined when some fail the texture test
 #endif
@@ -881,6 +887,19 @@ void select_top() {
     // 3) the usual running top-K insertion, over the survivors only (cells below the threshold bin have K strictly
     //    better cells, so the result is identical to inserting every cell)
     nk = 0;
+    if (RANK_FAST) {   // sort only the cells strictly above the threshold bin (< K of them), then fill from that bin in
+                       // grid order: bounded cost even when many cells share the boundary bin (low-texture frames)
+        for (int k = 0; k < NCAND; k++) {
+            if (bin[k] <= tb) continue;
+            float v = cscore[k];
+            int pos = nk++;
+            while (pos > 0 && topv[pos - 1] < v) { topv[pos] = topv[pos - 1]; top[pos] = top[pos - 1]; pos--; }
+            topv[pos] = v; top[pos] = k;
+        }
+        for (int k = 0; k < NCAND && nk < K; k++)
+            if (bin[k] == tb) { topv[nk] = cscore[k]; top[nk++] = k; }
+        return;
+    }
     for (int k = 0; k < NCAND; k++) {
         if (bin[k] < tb) continue;
         float v = cscore[k];
@@ -1719,6 +1738,7 @@ int32_t step(double t, const uint8_t* frame, const double* imu, int32_t imu_coun
         int want = (target_patches - n_patches + (SPLIT - si) - 1) / (SPLIT - si);
         if (LAST_SUB > 0 && si < SPLIT - 1)  // lighter last subset: its frame also runs the direction update
             want = (N_TRACK - LAST_SUB - n_patches + (SPLIT - 1 - si) - 1) / (SPLIT - 1 - si);
+        if (SUB_CAP > 0 && want > SUB_CAP) want = SUB_CAP;  // no catch-up on the last subset (its frame also runs the direction update)
         cut_templates(si, want);
     } else if (VPRIOR_IDLE == 1 && phase == KF_LEN - 2) {
         apply_velocity_prior();              // weak zero-velocity prior on an otherwise idle frame
