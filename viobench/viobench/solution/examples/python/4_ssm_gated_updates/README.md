@@ -60,14 +60,19 @@ bash 4_ssm_gated_updates/run.sh --out 4_ssm_gated_updates/checkpoints/experiment
 
 This starts all four models in one process with separate weights/optimizers,
 shared recordings and augmentation, and online W&B in
-`hyperdrone-vio-fuel-aware`. Outputs go to a fresh run directory. No full
-experiment has been launched by this implementation.
+`hyperdrone-vio-fuel-aware`. Outputs go to a fresh run directory. The launcher starts a fresh run; it never resumes an existing run implicitly.
 
 Fresh collection requires HyperDrone, scene assets and a working CUDA device.
-The default collection preset is the existing supervised ProcTHOR preset:
-training scenes 0–191, eight held-out scenes 192–199, and 4,001 IMU samples
-per flight. Ten horizons (2, 4, …, 20 seconds), ten motion levels at each horizon,
-then ten IMU and ten visual-noise levels use the existing staged student gates,
+The `collection_60s.json` preset retains training scenes 0–191 and eight
+held-out scenes 192–199, and collects 12,001 IMU samples per flight. The horizons
+are **1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1,024, 2,048, 4,096, 8,192,
+then 12,000 IMU intervals**. At 200 Hz these range from 0.005 to 60 seconds.
+Each training window includes its initial state, so sample counts are the listed
+values plus one (`2, 3, 5, ..., 8193, 12001`). These are IMU steps, not 20 Hz
+camera frames; a public 60-second flight still has 1,200 camera frames.
+
+Ten motion levels at each horizon, then ten IMU and ten visual-noise levels use
+the existing staged student gates,
 75/25 replay, plateau qualification and five-epoch sole-holdout exception.
 Early stopping is protected until the final curriculum stage. The safety ceiling
 is 1,500 epochs. `--help` exposes inherited host-training options; teacher
@@ -84,6 +89,18 @@ For existing recordings, use `--no-stream-data` and a positional NPZ directory.
 Its `scene_id` fields determine the split; filenames do not. The directory must
 contain training scenes in 0–191 and validation scenes in 192–199, with enough
 samples for the selected maximum horizon. Default production input is 640×480.
+The longer recordings use a 24 GiB upper bound for the three-slot scratch ring
+(current batch, prefetched batch, fixed validation), configurable with
+`--max-data-mib`. Captures remain uint8 in GPU buffers; normalization and
+checkpointed CNN work happen in small chunks instead of retaining full float RGB
+flights. The separate JEPA prediction/auxiliary prediction losses are zero when a
+window contains only the initial image; there is no future visual target yet.
+Alignment is zero until at least three camera observations are available.
+
+The new schedule applies only to this experiment. The student schedule in
+`1_generative_ssm` stays unchanged. Old staged checkpoints cannot resume under
+the changed horizon policy; use fresh weights. W&B/performance records include
+`horizon_imu_steps` and `horizon_seconds` as well as sample counts.
 
 ## Parallel versus sequential: measure on the target GPU
 
@@ -104,11 +121,12 @@ model updates on an identical prepared input. Epoch throughput includes data
 wait and validation, and should be used to assess overall performance.
 
 This is concurrent/serial **updates on shared batches**, not four unrelated
-training processes. It preserves shared curriculum progression. CUDA is built
-into `myenv`, but GPU devices are inaccessible in the implementation session,
-so no hardware-specific winner or GPU speedup is claimed.
+training processes. It preserves shared curriculum progression. CUDA smoke checks at both 1 and 12,000 intervals passed on the RTX 5080 using
+`myenv`, including real forward/backward updates with 640×480 captures. Schedule
+selection is still measured again for each production horizon and active group;
+these smoke checks are not a throughput or accuracy benchmark.
 
-An optional standalone benchmark uses recorded data at 2-, 10- and 20-second
+An optional standalone benchmark uses recorded data at 1-, 1,024- and 12,000-interval
 horizons without retaining optimizer updates:
 
 ```bash
@@ -195,7 +213,8 @@ python -m unittest discover -s 4_ssm_gated_updates/tests -v
 The tests require only the training environment, without pytest. They check all
 four models' causality, sequence/streaming agreement, missing-image zeros,
 JEPA/EMA gradient paths, camera transforms, recovery, the inherited horizons,
-and a synthetic uninterrupted 1,200-frame flight. CUDA scheduler rollback/update
+the new geometric horizon schedule, shortest-window losses, compact capture equivalence,
+and a synthetic uninterrupted 1,200-frame camera flight. CUDA scheduler rollback/update
 checks run when a GPU is accessible and otherwise report a skip. CPU training,
 curriculum, resume and standalone evaluation smoke results are recorded in
 `verification.json`. Synthetic checks do not establish learned accuracy on the

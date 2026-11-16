@@ -17,7 +17,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('data', type=Path, help='recorded training NPZ directory')
     parser.add_argument('--out', type=Path, default=legacy.HERE/'scheduling_benchmark.json')
-    parser.add_argument('--windows', type=int, nargs='+', default=[401, 2001, 4001])
+    parser.add_argument('--windows', type=int, nargs='+', default=[2, 1025, 12001],
+                        help='sample counts including the initial state; defaults cover 1,1024,12000 IMU intervals')
     parser.add_argument('--batch', type=int, default=1)
     args = parser.parse_args()
     if not torch.cuda.is_available():

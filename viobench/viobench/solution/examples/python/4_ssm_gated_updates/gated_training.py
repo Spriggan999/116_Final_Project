@@ -15,11 +15,12 @@ def frame_inputs(batch, device, with_images=True):
     if not torch.all(counts == counts[0]):
         raise ValueError('A minibatch must have equal observation counts; use batch size one for irregular flights')
     ticks = observed.nonzero()[:, 1].reshape(len(observed), -1).to(device)
-    indices = batch['anchor_img_idx'].gather(1, ticks.cpu()).to(device)
-    cameras = camera_values(batch['cam_images'], device)
+    indices = batch['anchor_img_idx'].gather(1, ticks.cpu())
+    # Transfer compact selected captures once, then normalize in CNN chunks.
+    cameras = batch['cam_images']
+    images = cameras[torch.arange(len(cameras))[:, None], indices].to(device,non_blocking=True)
     if 'photometric' in batch:
-        cameras = photometric_captures(cameras, batch['photometric'], chunk=cfg.VISUAL_CHUNK)
-    images = cameras[torch.arange(len(cameras), device=device)[:, None], indices]
+        images = photometric_captures(images, batch['photometric'], chunk=cfg.VISUAL_CHUNK)
     inputs = dict(images=images, imu=batch['imu'].to(device), dt=batch['dt'].to(device),
                   gravity=batch['gravity'].to(device), ticks=ticks, observed=observed.to(device))
     truth = {key: batch[key].to(device).clone() for key in ('pos', 'vel', 'rot', 'omega')}

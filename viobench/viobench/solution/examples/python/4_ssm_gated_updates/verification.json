@@ -1,11 +1,10 @@
 {
-  "environment": "myenv: PyTorch 2.15.0+cu132; torch.cuda.is_available() == False; no NVIDIA device nodes",
+  "environment": "myenv: CUDA host checks on NVIDIA GeForce RTX 5080; sandbox process visibility differs from host GPU access",
   "tests": {
     "command": "python -m unittest discover -s 4_ssm_gated_updates/tests -v",
-    "total": 13,
-    "passed": 12,
-    "skipped": 1,
-    "skipped_reason": "CUDA scheduling test requires accessible GPU"
+    "total": 17,
+    "passed": 17,
+    "skipped": 0
   },
   "smoke": {
     "all_four_cpu_training": "passed",
@@ -14,12 +13,12 @@
     "standalone_procthor_evaluation": "passed",
     "synthetic_complete_1200_frame_public_replay": "passed",
     "real_public_dataset_evaluation": "not run: no trained real-data checkpoints; network unavailable",
-    "cuda_timing_and_winner": "not measured: GPU inaccessible",
+    "cuda_timing_and_winner": "CUDA scheduler rollback/unit test passed; production scheduling is autotuned per horizon",
     "procThor_public_headlines_separate": "verified ProcTHOR JSONL names and standalone summary; public full-flight scoring tested synthetically"
   },
   "limitations": [
-    "Synthetic small-image/short-window checks establish execution, not trained accuracy.",
-    "CUDA schedule selection measures real optimizer updates on the target GPU before production updates."
+    "Synthetic checks establish finite execution and gradient paths, not real-trajectory accuracy.",
+    "No fresh long training run or real public evaluation was launched for this revision."
   ],
   "cpu_smoke_summary": {
     "baseline": {
@@ -46,5 +45,99 @@
       "unaligned_ate_rmse_m": 0.01241968043491305,
       "episodes": 1
     }
+  },
+  "horizon_revision": {
+    "schedule_imu_steps": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048,
+      4096,
+      8192,
+      12000
+    ],
+    "samples_include_initial_state": true,
+    "final_duration_s": 60,
+    "cpu_one_interval_training": "passed for all four profiles with curriculum probes",
+    "old_run_stopped": true,
+    "deleted_run": "20261116-003917-226787",
+    "fresh_run_started": false
+  },
+  "cuda_horizon_checks": {
+    "device": "NVIDIA GeForce RTX 5080",
+    "checks": [
+      {
+        "model": "baseline",
+        "horizon_steps": 1,
+        "seconds": 0.005,
+        "loss": 0.009025422856211662,
+        "gradient_norm": 0.0003410183999221772,
+        "peak_allocated_mib": 38.2744140625
+      },
+      {
+        "model": "aux_jepa",
+        "horizon_steps": 1,
+        "seconds": 0.005,
+        "loss": 0.009043986909091473,
+        "gradient_norm": 0.0006929040537215769,
+        "peak_allocated_mib": 38.7236328125
+      },
+      {
+        "model": "innovation",
+        "horizon_steps": 1,
+        "seconds": 0.005,
+        "loss": 0.009021693840622902,
+        "gradient_norm": 0.0001855370937846601,
+        "peak_allocated_mib": 38.986328125
+      },
+      {
+        "model": "combined",
+        "horizon_steps": 1,
+        "seconds": 0.005,
+        "loss": 0.009025960229337215,
+        "gradient_norm": 0.0003500769380480051,
+        "peak_allocated_mib": 39.43505859375
+      },
+      {
+        "model": "baseline",
+        "horizon_steps": 12000,
+        "seconds": 60.0,
+        "loss": 3392.746337890625,
+        "gradient_norm": 58233.578125,
+        "peak_allocated_mib": 1248.86767578125
+      },
+      {
+        "model": "aux_jepa",
+        "horizon_steps": 12000,
+        "seconds": 60.0,
+        "loss": 1376.434814453125,
+        "gradient_norm": 52444.046875,
+        "peak_allocated_mib": 1250.7080078125
+      },
+      {
+        "model": "innovation",
+        "horizon_steps": 12000,
+        "seconds": 60.0,
+        "loss": 1524.5975341796875,
+        "gradient_norm": 55256.453125,
+        "peak_allocated_mib": 1250.611328125
+      },
+      {
+        "model": "combined",
+        "horizon_steps": 12000,
+        "seconds": 60.0,
+        "loss": 2362.464599609375,
+        "gradient_norm": 55638.83203125,
+        "peak_allocated_mib": 1252.451171875
+      }
+    ]
   }
 }

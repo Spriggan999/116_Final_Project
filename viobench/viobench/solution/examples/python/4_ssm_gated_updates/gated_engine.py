@@ -17,6 +17,7 @@ import legacy
 from gated_training import ground_truth_targets, validation_inputs, train_student, validate_student
 from gated_recovery import save_latest, restore_latest
 from distill import curriculum_window, distillation_batch_size
+from gated_curriculum import DEFAULT_GATED_WINDOWS, HORIZON_POLICY
 HERE=Path(__file__).resolve().parent
 sys.path.insert(0,str(HERE.parents[4]))
 
@@ -85,7 +86,6 @@ def training_batches(pipeline,data,length,active,prepare,update,batch_limits,tun
 
 def main(argv=None):
     from gated_models import GatedModel as BudgetStudent, PROFILES, ALL_PROFILES
-    from student_curriculum import DEFAULT_STUDENT_WINDOWS
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('data',type=Path,nargs='?',default=HERE/'data')
     parser.add_argument('--teacher',type=Path,help='teacher run root; unused in ground-truth-only mode')
@@ -104,8 +104,9 @@ def main(argv=None):
     parser.add_argument('--start-epoch',type=int,help='completed epochs; stage recovery infers this from saved progress, otherwise defaults to zero')
     parser.add_argument('--epochs',type=int,default=500,help='safety ceiling; each profile stops independently')
     parser.add_argument('--patience',type=int,default=8,help='non-improving fresh batches; epochs for fixed data')
-    parser.add_argument('--window',type=int,help='fixed IMU window, overriding the default 2–20 second curriculum')
-    parser.add_argument('--curriculum-windows',type=int,nargs='+',default=list(DEFAULT_STUDENT_WINDOWS))
+    parser.add_argument('--window',type=int,help='fixed IMU sample count including the initial state; minimum 2')
+    parser.add_argument('--curriculum-windows',type=int,nargs='+',default=list(DEFAULT_GATED_WINDOWS),
+                        help='IMU sample counts including the initial state; defaults to 1,2,4,...,8192,12000 intervals plus one')
     parser.add_argument('--stage-epochs',type=int,default=6,
         help='fresh checks before plateau promotion; epochs per horizon with --no-difficulty-curriculum')
     parser.add_argument('--difficulty-curriculum',action=argparse.BooleanOptionalAction,default=True,
@@ -154,7 +155,7 @@ def main(argv=None):
     parser.add_argument('--seed',type=int,default=17)
     parser.set_defaults(ground_truth_only=True, skip_export=True, calibrate_architectures=False,
                         curriculum_order='staged', curriculum_probe_batches=12, epochs=1500,
-                        stream_data=True, collection_config=legacy.SOURCE/'supervised_procthor.json')
+                        stream_data=True, collection_config=HERE/'collection_60s.json')
     args=parser.parse_args(argv)
     if not args.ground_truth_only or not args.skip_export or args.calibrate_architectures:
         parser.error('This experiment supports supervised GPU checkpoints only')
@@ -198,9 +199,9 @@ def main(argv=None):
     if args.start_epoch is None:args.start_epoch=recovery['completed_epochs'] if recovery else 0
     args.resume_collection_index=recovery.get('collection_next_index',0) if recovery else 0
     windows=[args.window] if args.window is not None else args.curriculum_windows
-    if (not windows or windows!=sorted(set(windows)) or min(windows)<11 or
+    if (not windows or windows!=sorted(set(windows)) or min(windows)<2 or
         min(args.epochs,args.patience,args.batch or 1,args.max_passes_per_batch,args.verify_frames,args.stage_epochs,args.max_concurrent or 1)<1):
-        parser.error('counts must be positive and --window must be at least 11')
+        parser.error('counts must be positive and --window must include at least two samples (one IMU interval)')
     if not np.isfinite(args.min_delta) or args.min_delta<0:parser.error('--min-delta must be finite and nonnegative')
     if args.max_concurrent is not None and args.max_concurrent<1:parser.error('--max-concurrent must be positive')
     if min(args.curriculum_min_batches,args.curriculum_probe_batches)<1:
@@ -215,6 +216,8 @@ def main(argv=None):
         previous=json.loads((args.warm_start/'distillation.json').read_text())
         if previous.get('experiment') != '4_ssm_gated_updates':
             parser.error('Recovery source is not a gated-updates experiment')
+        if args.warm_start_stage and previous.get('horizon_policy') != HORIZON_POLICY:
+            parser.error('The horizon policy changed; start a fresh run rather than resuming the old curriculum')
         if previous.get('ground_truth_only',False)!=args.ground_truth_only:
             parser.error('warm-start training mode differs; use fresh checkpoints for a new objective')
         if previous.get('curriculum_order','joint')!=args.curriculum_order:
@@ -332,6 +335,9 @@ def main(argv=None):
                       curriculum_min_batches=args.curriculum_min_batches,curriculum_probe_batches=args.curriculum_probe_batches,
                       curriculum_settings={key:getattr(cfg,key) for key in vars(cfg) if key.startswith('CURRICULUM_')})
     provenance['experiment']='4_ssm_gated_updates'
+    provenance['horizon_policy']=HORIZON_POLICY
+    provenance['horizon_steps']=[length-1 for length in windows]
+    provenance['horizon_seconds']=[(length-1)/200. for length in windows]
     provenance['image_height']=cfg.H
     provenance['image_width']=cfg.W
     provenance['profiles']=list(dict.fromkeys(args.profiles))
@@ -552,6 +558,7 @@ def main(argv=None):
                                    student_updates=timer.samples*len(training),window=length,max_concurrent=pipeline.max_concurrent,
                                    training_batch_size=pipeline.training_batch_size,
                                    target_prefetch_batches=int(pipeline.parallel and pipeline.target_prefetch))
+                measurement.update(horizon_imu_steps=length-1,horizon_seconds=(length-1)/200.)
                 record_epoch(args.out,metric_namespace,epoch+1,measurement,data)
                 print(f'{mode_label} throughput: {measurement["samples_per_second"]:.2f} windows/s '
                       f'({len(training)} training, {len(paused)} paused profiles; includes validation/data wait)',flush=True)

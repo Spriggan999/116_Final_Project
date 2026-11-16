@@ -108,6 +108,77 @@ def test_existing_ten_horizon_policy():
     assert DEFAULT_STUDENT_WINDOWS == list(range(401,4002,400))
 
 
+def test_gated_power_of_two_schedule_and_collection():
+    import json
+    from gated_curriculum import DEFAULT_HORIZON_STEPS, DEFAULT_GATED_WINDOWS
+    assert DEFAULT_HORIZON_STEPS == [1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,12000]
+    assert DEFAULT_GATED_WINDOWS == [value+1 for value in DEFAULT_HORIZON_STEPS]
+    assert (DEFAULT_GATED_WINDOWS[-1]-1)*.005 == 60
+    settings=json.loads((Path(__file__).resolve().parents[1]/'collection_60s.json').read_text())
+    assert settings['COLLECT_STEPS'] >= DEFAULT_GATED_WINDOWS[-1]
+    assert settings['STREAM_MAX_MIB'] == 24576
+
+
+def test_single_interval_has_finite_losses_and_no_false_jepa_target():
+    for name in PROFILES:
+        model=GatedModel(PROFILES[name])
+        batch=inputs()
+        batch['imu']=batch['imu'][:,:2]
+        batch['images']=batch['images'][:,:1]
+        batch['observed']=batch['observed'][:,:2]
+        batch['ticks']=batch['ticks'][:,:1]
+        truth=dict(pos=torch.zeros(1,2,3),vel=torch.zeros(1,2,3),
+                   rot=torch.eye(3).expand(1,2,3,3),omega=torch.zeros(1,2,3))
+        prediction=model(**batch)
+        jepa=model.jepa_loss(prediction,batch['images'])
+        assert jepa['embedding_prediction'] == jepa['auxiliary_prediction'] == 0
+        assert not prediction['valid'].any()
+        assert not prediction['innovation_update'].any()
+        total,_,terms=objective(model,prediction,batch,truth)
+        assert torch.isfinite(total)
+        assert terms['alignment_weighted'] == 0
+        total.backward()
+        assert model.gru.weight_ih_l0.grad is not None
+
+
+def test_uint8_capture_encoding_matches_normalized_float():
+    model=GatedModel(PROFILES['combined']).eval()
+    batch=inputs()
+    batch['images']=(batch['images']*255).round().to(torch.uint8)
+    normalized=dict(batch,images=batch['images'].float()/255.)
+    with torch.no_grad():
+        a,b=model(**batch),model(**normalized)
+    for key in ('online','predicted','pos','rot','vel','omega'):
+        torch.testing.assert_close(a[key],b[key])
+    model.train()
+    result=model(**batch)
+    sum(model.jepa_loss(result,batch['images']).values()).backward()
+    assert model.vision.cnn[0].weight.grad is not None
+
+
+def test_short_and_sixty_second_recorded_windows():
+    from data import StateWindows
+    from gated_training import frame_inputs
+    from gated_curriculum import DEFAULT_GATED_WINDOWS
+    from types import SimpleNamespace
+    state=torch.zeros(12001,18)
+    state[:,3:12]=torch.eye(3).flatten()
+    imu=torch.zeros(12001,6)
+    imu[:,2]=9.81
+    entry=dict(cams=torch.zeros(3001,3,8,8,dtype=torch.uint8),cam_ticks=torch.arange(0,12001,4),
+               imu=imu,state=state,stride=4,dt=.005,file='synthetic.npz',scene_id=0)
+    store=SimpleNamespace(entries=[entry])
+    for length in DEFAULT_GATED_WINDOWS:
+        window=StateWindows(store,length=length,compact_cameras=True)[0]
+        assert len(window['imu']) == length
+        batch={key:value[None] for key,value in window.items() if torch.is_tensor(value)}
+        prepared,_=frame_inputs(batch,'cpu')
+        assert prepared['ticks'][0,0] == 0
+        assert prepared['ticks'].max() < length
+        if length == 12001:
+            assert prepared['images'].shape[1] == 1201
+
+
 def test_public_full_flight_keeps_one_state():
     from evaluate import public_flight
     from types import SimpleNamespace
@@ -177,7 +248,11 @@ def load_tests(loader, tests, pattern):
         with tempfile.TemporaryDirectory() as directory:
             test_resume_roundtrip(Path(directory))
     for function in (resume, test_camera_coordinates_and_angular_lever_arm, test_existing_ten_horizon_policy,
-                     test_public_full_flight_keeps_one_state, test_cuda_schedule_rollback_and_updates):
+                     test_public_full_flight_keeps_one_state, test_cuda_schedule_rollback_and_updates,
+                     test_gated_power_of_two_schedule_and_collection,
+                     test_single_interval_has_finite_losses_and_no_false_jepa_target,
+                     test_uint8_capture_encoding_matches_normalized_float,
+                     test_short_and_sixty_second_recorded_windows):
         suite.addTest(unittest.FunctionTestCase(function))
     return suite
 

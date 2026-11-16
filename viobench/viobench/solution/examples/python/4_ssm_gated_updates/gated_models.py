@@ -6,6 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from models import VisualFeatures, integrate_corrections, so3_exp
 from performance import neural_autocast, amp_disabled
+import config as cfg
 
 NAMES = ('baseline', 'aux_jepa', 'innovation', 'combined')
 PROFILES = {name: dict(profile=name, hidden=256, embedding_dim=48,
@@ -49,6 +50,22 @@ class GatedModel(nn.Module):
                        elapsed, previous_span), -1)
         return anchor + .25*torch.tanh(self.predictor(x))*(elapsed/.05).clamp(0, 2)
 
+    def encode_captures(self, encoder, images):
+        flat = images.flatten(0,1)
+        if flat.dtype != torch.uint8:
+            return encoder(flat)
+        from torch.utils.checkpoint import checkpoint
+        def encode(chunk):
+            return encoder(chunk.float()/255.)
+        parts=[]
+        for chunk in flat.split(max(1,int(cfg.VISUAL_CHUNK))):
+            if encoder.training and torch.is_grad_enabled():
+                # Retain shared uint8 inputs, including during backward.
+                parts.append(checkpoint(encode,chunk,use_reentrant=False))
+            else:
+                parts.append(encode(chunk))
+        return torch.cat(parts)
+
     def forward(self, images, imu, dt, gravity, ticks, observed, **unused):
         if self.training:
             return self._forward(images, imu, dt, gravity, ticks, observed)
@@ -60,7 +77,7 @@ class GatedModel(nn.Module):
         b, t, _ = imu.shape
         k = images.shape[1]
         e = self.settings['embedding_dim']
-        online = self.vision(images.flatten(0, 1)).reshape(b, k, e)
+        online = self.encode_captures(self.vision,images).reshape(b, k, e)
         with neural_autocast(imu):
             hidden, _ = self.gru(imu/10)
             # Prefix sums give interval IMU means without a Python tick loop.
@@ -98,7 +115,7 @@ class GatedModel(nn.Module):
     def jepa_loss(self, prediction, images):
         b, k = images.shape[:2]
         with torch.no_grad(), amp_disabled():
-            target = self.target(images.flatten(0, 1).float()).reshape(b, k, -1)
+            target = self.encode_captures(self.target,images).reshape(b, k, -1)
         mask = prediction['valid']
         online = prediction['online'].float()
         zero = online.sum()*0
