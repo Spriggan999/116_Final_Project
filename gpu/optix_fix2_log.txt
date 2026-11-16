@@ -1,0 +1,23 @@
+=== start Sun Nov 15 18:24:03 PST 2026
+=== 1. which library exports optixQueryFunctionTable?
+/usr/lib/wsl/lib/libnvoptix.so.1 -> no entry symbol
+/usr/lib/wsl/lib/libnvoptix_loader.so.1 -> no entry symbol
+=== 2. private alias libnvoptix.so.1 -> libnvoptix_loader.so.1
+total 8
+drwxr-xr-x  2 ninad ninad 4096 Nov 15 18:24 .
+drwxr-x--- 11 ninad ninad 4096 Nov 15 18:24 ..
+lrwxrwxrwx  1 ninad ninad   39 Nov 15 18:24 libnvoptix.so.1 -> /usr/lib/wsl/lib/libnvoptix_loader.so.1
+=== 3. retry the 10 s GPU test flight
+Optix call (optixInit()) failed with code 7805 (line 145)
+
+real	0m3.153s
+user	0m2.207s
+sys	0m1.676s
+=== exit code 2
+total 0
+drwxrwxrwx 1 root root 4096 Nov 15 18:24 .
+drwxrwxrwx 1 root root 4096 Nov 15 17:46 ..
+drwxrwxrwx 1 root root 4096 Nov 15 17:46 .viobench-simulate-1sinjpza
+drwxrwxrwx 1 root root 4096 Nov 15 18:24 .viobench-simulate-_ocielxz
+drwxrwxrwx 1 root root 4096 Nov 15 18:22 .viobench-simulate-sak2qpf5
+=== done Sun Nov 15 18:24:06 PST 2026

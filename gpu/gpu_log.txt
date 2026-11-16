@@ -1,0 +1,124 @@
+=== start Sun Nov 15 16:54:59 PST 2026
+=== 1. GPU visible in WSL?
+Sun Nov 15 16:54:59 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.62                 Driver Version: 592.00         CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3060 ...    On  |   00000000:01:00.0 Off |                  N/A |
+| N/A   42C    P8              8W /   73W |    1465MiB /   6144MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+=== 2. find the viobench environment
+venv: /home/ninad/vio/.venv
+viobench ok, python 3.12.3
+=== 3. hyperdrone
+hyperdrone 0.1.10
+=== 4. generate episodes (1 per scene, seed 7) into /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh
+hyperdrone: compiling environment configuration (WEBGPU)...
+conta: refreshing the index from https://conta.rl.tools/version/1/meta.json
+conta: downloading 07b9d8e44f3891573b6292f8cc47bf7725a43b89 (ProcTHOR-Train-1.glb) from https://huggingface.co/datasets/rl-tools/conta/resolve/main/data/07b9d8e44f3891573b6292f8cc47bf7725a43b89.gz
+#rl_tools::hyperlux: WebGPU adapter: llvmpipe (LLVM 20.1.2, 256 bits) (backend 6)
+#rl_tools::hyperlux: backend=webgpu
+#rl_tools::hyperlux::datasets: Loaded model with 655 mesh(es)
+conta: downloading b6bd082c60fcb27f42a2b5f2f635587d2b60d170 (RAPTOR/policy.tar) from https://huggingface.co/datasets/rl-tools/conta/resolve/main/data/b6bd082c60fcb27f42a2b5f2f635587d2b60d170
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  1152  100  1152    0     0   6326      0 --:--:-- --:--:-- --:--:--  6329100  1152  100  1152    0     0   6319      0 --:--:-- --:--:-- --:--:--  6329
+100  133k  100  133k    0     0   261k      0 --:--:-- --:--:-- --:--:--  261k
+ProcTHOR-Train-1 episodes 0-0 of 1: 12000 steps (60 s) x 1 flights in 1096.8s (11 steps/s), 0 crashed, waypoints reached [10] of 48, fov [131.2]
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-1-0000.zip (1200 frames, 60.0s, fov 131.2 deg, with trajectory.mp4)
+1 episodes in /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh
+
+real	20m34.871s
+user	175m56.307s
+sys	1m7.826s
+=== simulate exit code 0
+total 191732
+drwxrwxrwx 1 root root      4096 Nov 15 17:15 .
+drwxrwxrwx 1 root root      4096 Nov 15 16:55 ..
+-rwxrwxrwx 1 root root 196332908 Nov 15 17:15 sim-ProcTHOR-Train-1-0000.zip
+=== done Sun Nov 15 17:15:35 PST 2026
+=== start Sun Nov 15 18:44:53 PST 2026
+=== 1. GPU visible in WSL?
+Sun Nov 15 18:44:53 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.62                 Driver Version: 592.00         CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3060 ...    On  |   00000000:01:00.0 Off |                  N/A |
+| N/A   43C    P8              9W /   79W |     331MiB /   6144MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+=== 2. find the viobench environment
+venv: /home/ninad/vio/.venv
+viobench ok, python 3.12.3
+=== 3. hyperdrone
+hyperdrone 0.1.10
+Dozen not installed: rendering may fall back to the CPU (llvmpipe)
+renderer backend: WEBGPU
+CPU rendering with 4 threads at lowest priority
+=== 4. generate episodes (3 per scene, seed 11) into /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh
+hyperdrone: compiling environment configuration (WEBGPU)...
+=== start Sun Nov 15 18:47:37 PST 2026
+=== 1. GPU visible in WSL?
+Sun Nov 15 18:47:37 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.62                 Driver Version: 592.00         CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 3060 ...    On  |   00000000:01:00.0 Off |                  N/A |
+| N/A   44C    P8              9W /   79W |     331MiB /   6144MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+=== 2. find the viobench environment
+venv: /home/ninad/vio/.venv
+viobench ok, python 3.12.3
+=== 3. hyperdrone
+hyperdrone 0.1.10
+Dozen not installed: rendering may fall back to the CPU (llvmpipe)
+renderer backend: OPTIX
+CPU rendering with 4 threads at lowest priority
+=== 4. generate episodes (3 per scene, seed 11) into /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh
+hyperdrone: compiling environment configuration (OPTIX)...
+conta: downloading c4d6f96bebe1ed6b3be8195b8e59f5ce283ed9ba (ProcTHOR-Train-2.glb) from https://huggingface.co/datasets/conta-shards/procthor/resolve/main/data/c4d6f96bebe1ed6b3be8195b8e59f5ce283ed9ba.gz
+#rl_tools::hyperlux: backend=optix
+#rl_tools::hyperlux::datasets: Loaded model with 54 mesh(es)
+#rl_tools::hyperlux::datasets: Scene file has no lights: adding 3 directional fill lights
+conta: downloading 1fc7a937fb6e1db4ea8cbc45ae87cbd374fe8481 (ProcTHOR-Train-3.glb) from https://huggingface.co/datasets/conta-shards/procthor/resolve/main/data/1fc7a937fb6e1db4ea8cbc45ae87cbd374fe8481.gz
+#rl_tools::hyperlux: backend=optix
+#rl_tools::hyperlux::datasets: Loaded model with 324 mesh(es)
+#rl_tools::hyperlux::datasets: Scene file has no lights: adding 3 directional fill lights

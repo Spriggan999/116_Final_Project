@@ -174,6 +174,15 @@ Inference runs in wasm on the CPU and is metered, so the GPU never helps the sco
   Rejected: sideways-displacement prior (0.67-0.94: reinforces flipped estimates, flips 1.4% -> 4.7%),
   sideways-velocity prior NHC_SIG (0.504 alone, no gain on the suite with the sign rule, +5k fuel),
   full-res tracking DS=1 (0.71-1.18), LK_ITERS 4, median parallax, retuned PAR_SPEED_REL/VPRIOR/MAX_Q/CHI2/SIG_ROT_PAR.
+- **v8-lite** (`v8lite/solution.cpp`, single self-contained file): second, cheap Pareto point. Same estimator; 11 patches,
+  12x8 grid, SPLIT 4, KF_LEN 6, DIR_OWN 1 (11-frame window with a frame for only the direction update), VPRIOR_IDLE 1
+  (prior on a cut frame), P_FLOAT 1. Official: **0.682 m at 44,846** (suite 0.683). Area +0.43% on top of v8 + teammate.
+  Cost notes: the direction update's 3 filter rows ~20k in total (first call ~25k incl. correction); velocity prior ~9k.
+  Below ~40k needs filter surgery (fewer states); (30k, 0.75) would only add ~0.2% more.
+- **Long-baseline tracks (LONG_N, tried, rejected):** previous window's patches re-tracked (~14-frame baseline, 2-3x parallax,
+  direction agrees with the short one ~0.99). As extra filter rows on p - p_kf2 (second clone): worse (0.49-0.82 m;
+  weaker = better: over-constraining velocity, as with interleaved windows). Blended into the short direction (no extra rows):
+  neutral (0.461-0.474 vs 0.467) at +25k fuel. So the oracle's "direction bottleneck" is not fixed by a longer baseline.
 - Tools: tools/oracle.py (oracle direction/speed/attitude rebuild), tools/dirstat.py (per-window direction errors),
   tools/robust.py (stress suite), tools/area.py, tools/phaseall.py (per-phase max fuel over episodes).
 - Synthetic test harness lives in Claude's sandbox (tests/harness.py on viobench's tests/vio_scene.py renderer).

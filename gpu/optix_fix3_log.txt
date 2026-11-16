@@ -1,0 +1,24 @@
+=== start Sun Nov 15 18:31:52 PST 2026
+nvoptix.bin: /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvoptix.bin
+/usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvoptix.bin: data
+=== exports
+=== dependencies
+	not a dynamic executable
+load FAILED: /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvoptix.bin: invalid ELF header
+=== alias libnvoptix.so.1 -> nvoptix.bin, retry the 10 s GPU test
+Optix call (optixInit()) failed with code 7804 (line 145)
+
+real	0m4.416s
+user	0m2.230s
+sys	0m1.817s
+=== exit code 2
+total 0
+drwxrwxrwx 1 root root 4096 Nov 15 18:31 .
+drwxrwxrwx 1 root root 4096 Nov 15 17:46 ..
+drwxrwxrwx 1 root root 4096 Nov 15 17:46 .viobench-simulate-1sinjpza
+drwxrwxrwx 1 root root 4096 Nov 15 18:24 .viobench-simulate-_ocielxz
+drwxrwxrwx 1 root root 4096 Nov 15 18:31 .viobench-simulate-nb2dvf1h
+drwxrwxrwx 1 root root 4096 Nov 15 18:22 .viobench-simulate-sak2qpf5
+=== OptiX headers used by the build (version)
+#define OPTIX_VERSION 80000
+=== done Sun Nov 15 18:32:15 PST 2026

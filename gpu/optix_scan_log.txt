@@ -1,0 +1,41 @@
+=== start Sun Nov 15 18:26:14 PST 2026
+=== files
+-r-xr-xr-x 1 root root 50884424 May 28 06:23 /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/libnvidia-ptxjitcompiler.so.1
+-r-xr-xr-x 2 root root    10056 May 28 06:23 /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/libnvoptix_loader.so.1
+-r-xr-xr-x 1 root root 48744640 May 28 06:23 /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvoptix.bin
+-r-xr-xr-x 1 root root 62223592 May 28 07:00 /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvoptix.dll
+-r-xr-xr-x 1 root root 26052328 May 28 07:00 /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvptxJitCompiler32.dll
+-r-xr-xr-x 1 root root 30025960 May 28 07:00 /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/nvptxJitCompiler64.dll
+-r-xr-xr-x 2 root root    10056 May 28 06:23 /usr/lib/wsl/lib/libnvoptix.so.1
+-r-xr-xr-x 2 root root    10056 May 28 06:23 /usr/lib/wsl/lib/libnvoptix_loader.so.1
+=== exported functions
+--- /usr/lib/wsl/lib/libnvoptix.so.1
+dxcore_adapter_get_library_path
+dxcore_adapter_load_library
+dxcore_deinit
+dxcore_foreach_adapter
+dxcore_init
+--- /usr/lib/wsl/lib/libnvoptix_loader.so.1
+dxcore_adapter_get_library_path
+dxcore_adapter_load_library
+dxcore_deinit
+dxcore_foreach_adapter
+dxcore_init
+--- /usr/lib/wsl/drivers/nvam.inf_amd64_6c98bb76a18a5f20/libnvoptix_loader.so.1
+dxcore_adapter_get_library_path
+dxcore_adapter_load_library
+dxcore_deinit
+dxcore_foreach_adapter
+dxcore_init
+=== driver store folders
+1394.inf_amd64_ff5c4e8141fc4520
+3ware.inf_amd64_408ceed6ec8ab6cd
+61883.inf_amd64_9b37c5172d1526af
+acpi.inf_amd64_7607cd321fcade88
+acpiaudiocompositor.inf_amd64_6a560a2a98af0259
+acpidev.inf_amd64_fa92821fe60dc45c
+acpipagr.inf_amd64_d1093347a27ff89c
+acpipmi.inf_amd64_3ced06eb61dcc792
+acpitime.inf_amd64_077ae87a0383a0f1
+acxhdaudiop.inf_amd64_b7eddc3b98d77313
+=== done Sun Nov 15 18:26:23 PST 2026

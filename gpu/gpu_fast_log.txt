@@ -1,0 +1,88 @@
+=== start Sun Nov 15 18:58:57 PST 2026   8 per scene, seed 11, 8 flights at once, scenes: ProcTHOR-Train-3 ProcTHOR-Train-4 ProcTHOR-Train-5
+renderer backend: OPTIX
+fast_sim: 8 flights at once, PNG level 1
+hyperlux: preparing renderer (OPTIX); downloading build dependencies if needed...
+hyperlux: compiling renderer core (OPTIX)...
+=== start Sun Nov 15 19:02:13 PST 2026   8 per scene, seed 11, 8 flights at once, scenes: ProcTHOR-Train-3 ProcTHOR-Train-4 ProcTHOR-Train-5
+renderer backend: OPTIX
+fast_sim: 8 flights at once, PNG level 1
+=== start Sun Nov 15 19:04:27 PST 2026   8 per scene, seed 11, 8 flights at once, scenes: ProcTHOR-Train-3 ProcTHOR-Train-4 ProcTHOR-Train-5
+renderer backend: OPTIX
+fast_sim: 8 flights at once, PNG level 1
+hyperdrone: compiling environment configuration (OPTIX)...
+#rl_tools::hyperlux: backend=optix
+#rl_tools::hyperlux::datasets: Loaded model with 324 mesh(es)
+#rl_tools::hyperlux::datasets: Scene file has no lights: adding 3 directional fill lights
+conta: downloading 94cbdedae1413ccebea0958ca6528a19f8fc5356 (ProcTHOR-Train-4.glb) from https://huggingface.co/datasets/conta-shards/procthor/resolve/main/data/94cbdedae1413ccebea0958ca6528a19f8fc5356.gz
+#rl_tools::hyperlux: backend=optix
+#rl_tools::hyperlux::datasets: Loaded model with 303 mesh(es)
+#rl_tools::hyperlux::datasets: Scene file has no lights: adding 3 directional fill lights
+conta: downloading 4047585a48a5b4a0146d5e60b4c4bd97b0893268 (ProcTHOR-Train-5.glb) from https://huggingface.co/datasets/conta-shards/procthor/resolve/main/data/4047585a48a5b4a0146d5e60b4c4bd97b0893268.gz
+#rl_tools::hyperlux: backend=optix
+#rl_tools::hyperlux::datasets: Loaded model with 190 mesh(es)
+#rl_tools::hyperlux::datasets: Scene file has no lights: adding 3 directional fill lights
+ProcTHOR-Train-3 episodes 0-7 of 8: 12000 steps (60 s) x 8 flights in 266.6s (360 steps/s), 0 crashed, waypoints reached [9, 10, 9, 10, 9, 8, 8, 7] of 48, fov [109.6, 112.9, 105.4, 132.0, 133.7, 113.5, 133.3, 105.1]
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0000.zip (1200 frames, 60.0s, fov 109.6 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0001.zip (1200 frames, 60.0s, fov 112.9 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0002.zip (1200 frames, 60.0s, fov 105.4 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0003.zip (1200 frames, 60.0s, fov 132.0 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0004.zip (1200 frames, 60.0s, fov 133.7 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0005.zip (1200 frames, 60.0s, fov 113.5 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0006.zip (1200 frames, 60.0s, fov 133.3 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-3-0007.zip (1200 frames, 60.0s, fov 105.1 deg)
+ProcTHOR-Train-4 episodes 0-7 of 8: 12000 steps (60 s) x 8 flights in 365.8s (262 steps/s), 0 crashed, waypoints reached [10, 6, 11, 9, 9, 9, 10, 10] of 48, fov [128.3, 129.7, 134.2, 123.3, 124.2, 106.1, 106.8, 116.2]
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0000.zip (1200 frames, 60.0s, fov 128.3 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0001.zip (1200 frames, 60.0s, fov 129.7 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0002.zip (1200 frames, 60.0s, fov 134.2 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0003.zip (1200 frames, 60.0s, fov 123.3 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0004.zip (1200 frames, 60.0s, fov 124.2 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0005.zip (1200 frames, 60.0s, fov 106.1 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0006.zip (1200 frames, 60.0s, fov 106.8 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-4-0007.zip (1200 frames, 60.0s, fov 116.2 deg)
+ProcTHOR-Train-5 episodes 0-7 of 8: 12000 steps (60 s) x 8 flights in 297.5s (323 steps/s), 0 crashed, waypoints reached [8, 9, 8, 8, 7, 9, 8, 10] of 48, fov [120.4, 131.1, 114.3, 120.4, 121.2, 129.2, 121.2, 125.2]
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0000.zip (1200 frames, 60.0s, fov 120.4 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0001.zip (1200 frames, 60.0s, fov 131.1 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0002.zip (1200 frames, 60.0s, fov 114.3 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0003.zip (1200 frames, 60.0s, fov 120.4 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0004.zip (1200 frames, 60.0s, fov 121.2 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0005.zip (1200 frames, 60.0s, fov 129.2 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0006.zip (1200 frames, 60.0s, fov 121.2 deg)
+wrote /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh/sim-ProcTHOR-Train-5-0007.zip (1200 frames, 60.0s, fov 125.2 deg)
+24 episodes in /mnt/c/Users/ninad/Desktop/EECS116/Final_project/data/fresh
+
+real	27m25.395s
+user	33m41.854s
+sys	4m7.281s
+=== simulate exit code 0
+total 8349000
+drwxrwxrwx 1 root root      4096 Nov 15 19:31 .
+drwxrwxrwx 1 root root      4096 Nov 15 19:04 ..
+-rwxrwxrwx 1 root root 196332908 Nov 15 17:15 sim-ProcTHOR-Train-1-0000.zip
+-rwxrwxrwx 1 root root 607961135 Nov 15 18:56 sim-ProcTHOR-Train-2-0000.zip
+-rwxrwxrwx 1 root root 597412934 Nov 15 18:57 sim-ProcTHOR-Train-2-0001.zip
+-rwxrwxrwx 1 root root 601827334 Nov 15 18:57 sim-ProcTHOR-Train-2-0002.zip
+-rwxrwxrwx 1 root root 141394447 Nov 15 19:12 sim-ProcTHOR-Train-3-0000.zip
+-rwxrwxrwx 1 root root 124828898 Nov 15 19:13 sim-ProcTHOR-Train-3-0001.zip
+-rwxrwxrwx 1 root root 129848872 Nov 15 19:13 sim-ProcTHOR-Train-3-0002.zip
+-rwxrwxrwx 1 root root 145338391 Nov 15 19:13 sim-ProcTHOR-Train-3-0003.zip
+-rwxrwxrwx 1 root root 128970320 Nov 15 19:13 sim-ProcTHOR-Train-3-0004.zip
+-rwxrwxrwx 1 root root 110132964 Nov 15 19:13 sim-ProcTHOR-Train-3-0005.zip
+-rwxrwxrwx 1 root root 112389852 Nov 15 19:13 sim-ProcTHOR-Train-3-0006.zip
+-rwxrwxrwx 1 root root  94638460 Nov 15 19:14 sim-ProcTHOR-Train-3-0007.zip
+-rwxrwxrwx 1 root root 494628664 Nov 15 19:21 sim-ProcTHOR-Train-4-0000.zip
+-rwxrwxrwx 1 root root 504909032 Nov 15 19:21 sim-ProcTHOR-Train-4-0001.zip
+-rwxrwxrwx 1 root root 503020137 Nov 15 19:21 sim-ProcTHOR-Train-4-0002.zip
+-rwxrwxrwx 1 root root 495337048 Nov 15 19:22 sim-ProcTHOR-Train-4-0003.zip
+-rwxrwxrwx 1 root root 495583468 Nov 15 19:22 sim-ProcTHOR-Train-4-0004.zip
+-rwxrwxrwx 1 root root 483906310 Nov 15 19:23 sim-ProcTHOR-Train-4-0005.zip
+-rwxrwxrwx 1 root root 509524226 Nov 15 19:23 sim-ProcTHOR-Train-4-0006.zip
+-rwxrwxrwx 1 root root 518090485 Nov 15 19:23 sim-ProcTHOR-Train-4-0007.zip
+-rwxrwxrwx 1 root root 223106995 Nov 15 19:29 sim-ProcTHOR-Train-5-0000.zip
+-rwxrwxrwx 1 root root 262628601 Nov 15 19:29 sim-ProcTHOR-Train-5-0001.zip
+-rwxrwxrwx 1 root root 201490829 Nov 15 19:30 sim-ProcTHOR-Train-5-0002.zip
+-rwxrwxrwx 1 root root 135097023 Nov 15 19:30 sim-ProcTHOR-Train-5-0003.zip
+-rwxrwxrwx 1 root root 119666226 Nov 15 19:30 sim-ProcTHOR-Train-5-0004.zip
+-rwxrwxrwx 1 root root 180400646 Nov 15 19:30 sim-ProcTHOR-Train-5-0005.zip
+-rwxrwxrwx 1 root root 214942975 Nov 15 19:30 sim-ProcTHOR-Train-5-0006.zip
+-rwxrwxrwx 1 root root 215912018 Nov 15 19:31 sim-ProcTHOR-Train-5-0007.zip
+=== done Sun Nov 15 19:31:52 PST 2026
