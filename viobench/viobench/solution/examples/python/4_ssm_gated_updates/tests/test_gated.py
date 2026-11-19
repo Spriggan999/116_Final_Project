@@ -7,7 +7,7 @@ import tempfile
 from functools import partial, update_wrapper
 import torch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 import legacy
 from gated_models import GatedModel, PROFILES
 from gated_training import objective, train_student
@@ -116,7 +116,8 @@ def test_gated_power_of_two_schedule_and_collection():
     assert (DEFAULT_GATED_WINDOWS[-1]-1)*.005 == 60
     settings=json.loads((Path(__file__).resolve().parents[1]/'collection_60s.json').read_text())
     assert settings['COLLECT_STEPS'] >= DEFAULT_GATED_WINDOWS[-1]
-    assert settings['STREAM_MAX_MIB'] == 24576
+    assert settings['STREAM_MAX_MIB'] == 12288
+    assert settings['STREAM_SCENES'] == 2 and settings['STREAM_EPISODES_PER_SCENE'] == 1
 
 
 def test_single_interval_has_finite_losses_and_no_false_jepa_target():

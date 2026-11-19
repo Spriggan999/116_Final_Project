@@ -249,7 +249,9 @@ def test_curriculum_preset_applies_to_fresh_and_resumed_training(tmp_path,warm_s
     assert (config.EPOCHS_FRAME,config.EPOCHS_STUDENT)==((3,5) if cli_override else (400,600))
     assert (config.EPOCHS_TEACHER,config.EPOCHS_DISTILL)==(60,100)
     assert config.FRAME_VAL_PAIR_BATCH==8
-    assert [state_batch_size(config,n) for n in config.SL_CURRICULUM_WINDOWS]==([2,2,2,1,1] if cli_override else [8,4,2,1,1])
+    assert config.SL_CURRICULUM_WINDOWS==list(range(401,4002,400))
+    assert [state_batch_size(config,n) for n in config.SL_CURRICULUM_WINDOWS]==(
+        [2,2,2,2,1,1,1,1,1,1] if cli_override else [8,4,2,2,1,1,1,1,1,1])
     assert [state_batch_size(config,n) for n in config.PPO_CURRICULUM_WINDOWS]==([2,2,1,1] if cli_override else [8,3,1,1])
     assert config.PPO_ITERATIONS==60 and config.PPO_MINIBATCH==cfg.PPO_MINIBATCH
     assert config.COLLECT_INSTANCES==2

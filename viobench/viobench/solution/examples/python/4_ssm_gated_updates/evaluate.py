@@ -6,10 +6,14 @@ from pathlib import Path
 import time
 import tempfile
 import legacy
+import resource_limits
+from resource_limits import ResourceGuard, Limits
+from safe_storage import scratch_environment
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from data import EpisodeStore, StateEpisodes
+from data import EpisodeStore
+from gated_data import GatedStateEpisodes
 from gated_models import GatedModel
 from gated_training import validation_inputs, objective
 from leaderboard_metrics import LeaderboardATE
@@ -126,10 +130,15 @@ def evaluate(run, suite, device, profiles=None, out=None, wandb_mode='disabled')
         manifest = public
         flights = episodes(public)
     else:
-        files = sorted((run/'procthor_data').glob('rollout_s*_e*.npz'))
         manifest = json.loads((run/'procthor_data'/'manifest.json').read_text())
-        flights = DataLoader(StateEpisodes(EpisodeStore(files, metadata.get('image_height',480),
-                                                        metadata.get('image_width',640))), batch_size=1)
+        files = [Path(row['file']) if Path(row['file']).is_absolute() else run/'procthor_data'/row['file']
+                 for row in manifest]
+        if any(not path.exists() for path in files):
+            raise FileNotFoundError('Retained ProcTHOR recordings are missing; see procthor_data/manifest.json for their scratch paths')
+        store = EpisodeStore(files, metadata.get('image_height',480), metadata.get('image_width',640))
+        # Corrected runs are scored with the targets/gravity they were trained on.
+        store.corrected_supervision = metadata.get('training_policy') == 'corrected_v1'
+        flights = DataLoader(GatedStateEpisodes(store), batch_size=1)
     (out/'manifest.json').write_text(json.dumps(manifest, indent=2))
     import wandb
     tracking = wandb.init(project='hyperdrone-vio-fuel-aware', mode=wandb_mode,
@@ -187,8 +196,15 @@ def main(argv=None):
     parser.add_argument('--profiles', nargs='+')
     parser.add_argument('--out', type=Path)
     parser.add_argument('--wandb-mode', choices=['online','offline','disabled'], default='disabled')
+    parser.add_argument('--resource-dir',type=Path,default=Path('/var/tmp')/f'gated-updates-{os.getuid()}')
+    for name,value in vars(Limits()).items():
+        parser.add_argument('--'+name.replace('_','-'),type=int,default=value)
     args = parser.parse_args(argv)
-    evaluate(args.run, args.suite, args.device, args.profiles, args.out, args.wandb_mode)
+    if resource_limits.ACTIVE is not None:
+        return evaluate(args.run,args.suite,args.device,args.profiles,args.out,args.wandb_mode)
+    limits=Limits(**{name:getattr(args,name) for name in vars(Limits())})
+    with ResourceGuard(args.out or args.run/args.suite,args.resource_dir,limits),scratch_environment(args.resource_dir):
+        return evaluate(args.run,args.suite,args.device,args.profiles,args.out,args.wandb_mode)
 
 
 if __name__ == '__main__':

@@ -72,8 +72,9 @@ values plus one (`2, 3, 5, ..., 8193, 12001`). These are IMU steps, not 20 Hz
 camera frames; a public 60-second flight still has 1,200 camera frames.
 
 Ten motion levels at each horizon, then ten IMU and ten visual-noise levels use
-the existing staged student gates,
-75/25 replay, plateau qualification and five-epoch sole-holdout exception.
+75/25 training replay and hybrid competence/budget promotion. Every model
+continues training while its peers qualify. Promotion checks use the current held-out curriculum distribution,
+as described below.
 Early stopping is protected until the final curriculum stage. The safety ceiling
 is 1,500 epochs. `--help` exposes inherited host-training options; teacher
 distillation, architecture calibration and WASM export are disabled here.
@@ -89,9 +90,12 @@ For existing recordings, use `--no-stream-data` and a positional NPZ directory.
 Its `scene_id` fields determine the split; filenames do not. The directory must
 contain training scenes in 0–191 and validation scenes in 192–199, with enough
 samples for the selected maximum horizon. Default production input is 640×480.
-The longer recordings use a 24 GiB upper bound for the three-slot scratch ring
-(current batch, prefetched batch, fixed validation), configurable with
-`--max-data-mib`. Captures remain uint8 in GPU buffers; normalization and
+The recording ring is limited to 12 GiB across current data, one prefetched
+batch and fixed validation (`--max-data-mib`). The default batch contains two
+scenes with one flight each, collected one instance at a time. The collector
+stores exactly 20 Hz images and every 200 Hz IMU sample. This reduces memory and
+disk use without shortening the 60-second horizon. Compression streams directly
+to a bounded temporary file, rather than buffering an entire NPZ in RAM. Captures remain uint8 in GPU buffers; normalization and
 checkpointed CNN work happen in small chunks instead of retaining full float RGB
 flights. The separate JEPA prediction/auxiliary prediction losses are zero when a
 window contains only the initial image; there is no future visual target yet.
@@ -101,6 +105,61 @@ The new schedule applies only to this experiment. The student schedule in
 `1_generative_ssm` stays unchanged. Old staged checkpoints cannot resume under
 the changed horizon policy; use fresh weights. W&B/performance records include
 `horizon_imu_steps` and `horizon_seconds` as well as sample counts.
+
+## Storage and memory protection
+
+The previous `/tmp` recording path is unsafe on hosts where `/tmp` is tmpfs:
+those files consume RAM. The default scratch/cache root is now
+`/var/tmp/gated-updates-UID`, verified to be disk-backed. RAM-backed
+`--resource-dir` and recording `--stream-dir` paths are rejected.
+
+The launcher installs a one-second resource watchdog for the trainer and its
+child processes. Defaults are:
+
+| Resource | Default |
+|---|---:|
+| Minimum filesystem free space | 10 GiB |
+| Minimum remaining user quota, when available | 1 GiB |
+| Minimum available system RAM | 8 GiB |
+| Maximum combined trainer/child RSS | 24 GiB |
+| Combined application scratch and cache budget | 16 GiB |
+| Per-run checkpoints and log budget | 1 GiB |
+| Recording-ring budget within scratch | 12 GiB |
+
+Quota checks use `quota -w` when supported; `df` alone is insufficient on the
+instructional home filesystem. Scratch/cache and run-directory sizes are checked
+periodically, with additional checks before checkpoint writes. These are
+application headroom thresholds, not an OS-level reservation against unrelated
+programs or instantaneous external allocations.
+
+Under pressure the watchdog cancels the collector and interrupts training so
+normal cleanup can retire that run's temporary/current/prefetched recordings.
+Completed model checkpoints stay intact. Interrupted atomic checkpoint writes
+remove their temporary file and retain the previous checkpoint. The code never
+automatically deletes another run, user datasets, or old checkpoints.
+
+Validation uses one retained set per run on scratch, referenced by its manifest.
+Multiple retained validation sets and caches count toward the common 16 GiB
+budget. If it fills, free unneeded data explicitly or choose a larger disk-backed
+resource directory; the launcher stops rather than silently growing storage.
+Old sets are not automatically evicted, because their manifests may still be
+needed to reproduce results. `/var/tmp` is scratch storage, not a permanent
+backup; model checkpoints remain in the project unless `--out` changes that.
+
+Hyperlux, CUDA, Torch, W&B staging, scene assets and temporary build caches are
+redirected into the watched scratch root. Existing scene caches remain usable
+as read-only search sources. Native build parallelism is capped at two jobs.
+Data-loader workers default to zero to avoid duplicating large in-memory
+recordings across worker processes. CUDA model scheduling remains automatic.
+
+The same safeguards wrap standalone `evaluate.py`. Flags use MiB, for example
+`--resource-dir /DISK/PATH --max-scratch-mib 16384 --min-disk-free-mib 10240`.
+The remaining flags are `--min-quota-free-mib`, `--min-ram-free-mib`,
+`--max-host-memory-mib`, and `--max-run-mib`. Lowering headroom weakens the
+protection; defaults are intended for the current 62 GiB RAM / 16 GiB GPU host.
+`train.py --help` lists resource and training controls. No full training run is
+started automatically after a code update. Restart through `run.sh` to use the
+new guards; previously running Python processes do not reload them.
 
 ## Parallel versus sequential: measure on the target GPU
 
@@ -139,9 +198,66 @@ For controlled comparisons, `--parallel-mode serial` forces serial execution;
 
 ## Separate validation suites
 
-ProcTHOR validation runs on complete held-out flights every epoch and alone
-controls checkpoint selection, curriculum and stopping. The exact recordings
-are retained in the run's `procthor_data` directory for standalone replay.
+Curriculum promotion uses up to 12 fixed ProcTHOR held-out windows, matching
+**the current horizon, motion bin, IMU noise and visual noise**. Validation has
+no easier-level replay or harder-level exploration, and uses fixed examples and
+augmentation seeds. Motion filtering remains active during IMU and visual-noise
+phases too; an unavailable motion bin uses the nearest available lower bin.
+The supervised state-plus-alignment loss (excluding JEPA) remains logged as
+`MODEL/procthor_curriculum_val/validation_loss`. Promotion instead uses physical
+errors after the initialized sample: position-vector RMSE, velocity-vector RMSE,
+orientation geodesic RMSE in degrees, and angular-velocity-vector RMSE. Squared
+errors are aggregated across all probe samples before taking their square root,
+so minibatch size does not change the criteria.
+
+The hybrid rule is:
+
+1. Train for at least **six fresh recording checks** per stage (the maximum of
+   `--stage-epochs` and `--curriculum-min-batches`). Reused epochs do not count.
+2. Advance when **all four physical errors meet their targets for three
+   consecutive checks**, for every active model. Improvement does not reset this
+   competence history. Qualified models keep training; regression removes readiness.
+3. At **18 fresh checks**, advance even if targets are unmet, explicitly logging
+   `budget_exhausted` and `forced_promotion=true`. This is a bounded fallback,
+   not a claim of mastery. It also works when all models are struggling.
+
+Provisional target defaults are `(base + rate * horizon_seconds) * difficulty_scale`:
+
+| Metric | Base | Per second |
+|---|---:|---:|
+| Position RMSE (m) | 0.02 | 0.02 |
+| Velocity RMSE (m/s) | 0.10 | 0.01 |
+| Orientation RMSE (degrees) | 2.0 | 0.10 |
+| Angular velocity RMSE (rad/s) | 0.05 | 0.001 |
+
+`difficulty_scale = 1 + 0.5*motion_level + imu_level + visual_level`, using levels
+normalized to 0–1. These targets need empirical calibration; they are not measured
+accuracy guarantees. Alignment still contributes to training and the logged stage
+loss; it is not a competence threshold because short windows may have fewer than
+three real images. Full-flight ATE never gates promotion. The former near-best
+plateau remains a diagnostic only. Public validation and the original curriculum
+in `1_generative_ssm` are unchanged.
+
+Use `--curriculum-max-stage-checks` and `--curriculum-accuracy-patience` to change
+the budgets. `--curriculum-accuracy-targets FILE.json` accepts overrides mapping
+`position_rmse_m`, `velocity_rmse_mps`, `orientation_rmse_deg`, and
+`angular_velocity_rmse_radps` to `[base, per_second]`. Omitted keys use defaults.
+For example: `{"position_rmse_m": [0.03, 0.02]}`. The accuracy patience must be
+no greater than the minimum budget, which must not exceed the maximum budget.
+The overall epoch ceiling still applies and can stop training before curriculum
+completion.
+
+W&B and local records retain the stage loss, horizon, and difficulty levels under
+`procthor_curriculum_val/*`, with physical RMSEs, their effective targets,
+competence, and stage-check count. W&B `curriculum/*` also logs readiness reasons,
+error-to-target ratios, and forced advances. Detailed promotion events are saved
+in `curriculum_metrics.jsonl`. New-policy resumes retain saved budgets, targets,
+and check history; W&B records the effective restored settings.
+
+Full-flight, unaugmented ProcTHOR validation still runs every epoch for
+separate diagnostics, checkpoint selection and final early stopping. `procthor_data/manifest.json` points to the exact retained validation recordings
+on disk-backed scratch for standalone replay; the files are not copied into the
+home-directory quota. Keep those referenced files while you need reevaluation.
 
 After training, the selected best checkpoints are evaluated on all ten
 `viobench.episodes.public` flights, downloaded through the normal conta cache.
@@ -179,6 +295,18 @@ python 4_ssm_gated_updates/evaluate.py --run PATH_TO_RUN \
   --suite public60 --device cuda --wandb-mode online
 ```
 
+The public suite remains unchanged: all ten complete 60-second flights with
+its existing separate metrics and no influence on promotion. Complete ProcTHOR
+metrics keep their `procthor_val/*` names; stage probes have the separate
+`procthor_curriculum_val/*` namespace and are recorded only on fresh-data checks.
+
+When resuming a run from either former promotion policy, weights, optimizer,
+horizon and difficulty are retained. Incompatible plateau/readiness history is
+reset, including paused peers and holdout counters. The new minimum budget starts
+from zero to collect physical accuracy measurements. Hybrid-policy checkpoints
+retain their check history on subsequent resumes. Restart/resume is needed to
+apply this code to a running process; editing files does not stop the live run.
+
 The public catalog names ProcTHOR scene 1, which is also inside the inherited
 training scene range. These public episodes are separate recordings, not a
 scene-disjoint holdout. The ProcTHOR 192–199 set remains scene-disjoint.
@@ -200,9 +328,142 @@ bash 4_ssm_gated_updates/run.sh \
   --out 4_ssm_gated_updates/checkpoints/recovered
 ```
 
-Repeat any custom host/collection options from the original invocation.
+Repeat any custom host/collection options from the original invocation. These
+options carry over automatically unless you override them: training policy,
+architecture, visual-update bounds, `--fixed-horizon`/`--window`,
+`--max-fresh-checks`, `--resume-lr` and `--lr-schedule`.
+Validation collection is deterministic, so an exact resume reuses the parent's
+recordings (`procthor_data/manifest.json`) while they exist instead of collecting
+another ~0.9 GB copy. `latest.pt` embeds the recovery and fresh-check state in
+the same atomic write as the weights. An interruption can no longer leave a run
+unresumable. `recovery_state.json` and `experiment_state.json` are readable mirrors.
 Without `--warm-start-stage`, warm-start loads selected best weights and starts
 fresh optimization. Checkpoint files are local trusted experiment artifacts.
+
+Numerical recovery checks gradients before every optimizer/EMA update. A nonfinite
+loss or gradient norm triggers one full-precision retry of the same minibatch.
+If the retried loss is finite but gradients remain invalid, that update is skipped
+without changing weights, Adam moments, or EMA. Per-epoch logs and W&B expose
+`MODEL/train_numerical_retry` and `MODEL/train_optimizer_update_skipped` as
+sample-weighted fractions. Persistent nonfinite forward losses still stop with
+component diagnostics. Resume from the last completed checkpoint to use this fix.
+
+## Corrected training, LR sweep and persistent-vision pilot
+
+Every option below is opt-in. Without them, training and exact resumes behave as
+before (`legacy` policy and architecture).
+
+**`--training-policy corrected_v1`** changes supervision and model selection:
+
+- Velocity targets are absolute (`R0ᵀ v(t)`), consistent with the position target
+  `R0ᵀ[p(t)−p(0)]`. Legacy targets subtracted the initial velocity from velocity
+  but not from position: about 4 m disagreement at 20.48 s on held-out flights.
+- The initialized sample is excluded from state losses.
+- Gravity is the mean of up to ten accelerometer samples ending at the window
+  start, the same rule as public-flight inference. Recordings store a zero IMU
+  placeholder at tick 0; a window starting there uses the first real sample.
+  Legacy windows averaged the ten samples *after* the start.
+- Stage-best checkpoints are chosen on fresh checks by the mean squared
+  error-to-target ratio of the four current-stage physical RMSEs. Global-best
+  `student.pt` and early stopping use full-flight **unaligned** ATE RMSE.
+  Sim(3) ATE is still logged.
+- `--curriculum-budget-action` defaults to `stop` (otherwise `advance`): when the
+  stage check budget runs out without competence, the run checkpoints and stops
+  with `stop_reason=stage_budget_exhausted` instead of forcing promotion.
+
+Exact resume (`--warm-start-stage`) requires the same policy and architecture.
+To move a legacy checkpoint to the corrected policy, use a weight-only warm start
+(`--init-weights global|latest|stage`, which resets optimizer moments).
+
+**Learning rate.** `--resume-lr RATE` is applied after every optimizer restore,
+including stage transitions; previously, restored optimizer state overwrote the
+rate. `--lr-schedule FILE` takes `[{"horizon_seconds": 0.16, "lr": 3e-4}, ...]` and
+applies the last entry at or below the current horizon. `--resume-lr` wins over
+the schedule. `MODEL/learning_rate` records the effective rate.
+
+**Fixed-horizon experiments.** `--fixed-horizon --window N` trains at one horizon
+and motion level 0 without promotion. `--max-fresh-checks N` stops after N fresh
+checks (`stop_reason=fresh_check_limit`), and the count carries across exact
+resumes. `--validation-manifest FILE` reuses fixed held-out recordings. Any run's
+`procthor_data/manifest.json` works, if its `/var/tmp` recordings still exist.
+
+**`--architecture persistent_visual_v2`.** At each real capture after the first,
+a visual GRU cell updates the IMU GRU state with the current and previous
+embeddings, their difference and elapsed time. Zero-initialized heads add a
+bounded velocity update (`--velocity-update-bound`, default 0.5 m/s) and a
+right-multiplied orientation update (`--orientation-update-bound`, 0.02 rad).
+Position never jumps. Batched training uses the same event order as
+`stream_step`; the tests check parity. Start from legacy weights with a weight-only
+warm start plus `--allow-architecture-transfer`.
+
+Added telemetry: per-module gradient norms, `gradient_clipped`,
+`correction_saturation_fraction`, `rotation_orthogonality_rmse`, and
+`visual_{velocity,orientation}_update_rms`.
+
+### Diagnostics (never used for selection)
+
+```bash
+python 4_ssm_gated_updates/diagnostics.py --run RUN --weights latest \
+  --horizon 20.48 --max-windows 48 --reset-seconds 1 5
+```
+
+This re-integrates each model's own corrections on held-out windows under five
+modes: deployable `normal`, `oracle_velocity`, `oracle_gravity`, `oracle_both`,
+and ground-truth state resets every N seconds (a teacher-forcing diagnostic).
+`replay_max_deviation` must stay small, because it checks that the re-integration
+reproduces the model's output. Results go to `RUN/diagnostics/`.
+
+### Representative-horizon LR sweep
+
+`gated_lr_sweep.py` runs Baseline at 0.16, 2.56, 10.24 and 20.48 s with
+`1e-5, 3e-5, 1e-4, 3e-4`:
+
+1. Each candidate gets 30 fresh checks.
+2. The best two continue to 100 checks, and Combined confirms them.
+3. Ranking uses the last-ten-check mean unaligned ATE. A candidate is rejected if
+   any physical RMSE is more than 10% worse than `3e-4` or more than 1% of updates
+   were skipped. ATE results within 2% are tie-broken by fewer skipped updates,
+   then the lower LR.
+4. If adjacent horizons pick different winners, `refine` adds 0.64 s or 5.12 s.
+
+Each horizon starts every candidate from the same checkpoint: the saved run
+nearest on a log scale, with ties going to the more-trained run. Override with
+`--source 0.16=PATH`. These are adaptation experiments, not historical snapshots.
+
+Run it in a tmux server that survives SSH logout on this host
+(`KillUserProcesses=yes`):
+
+```bash
+cd .../solution/examples/python
+SWEEP=4_ssm_gated_updates/checkpoints/lr-sweep
+OUT=/var/tmp/gated-lr-sweep-$(id -u)    # run outputs: the home quota is only 4 GB
+PY=/home/cc/eecs116/fa26/class/eecs116-aaq/.conda/envs/myenv/bin/python
+$PY 4_ssm_gated_updates/gated_lr_sweep.py plan --plan $SWEEP/plan.json --out $OUT \
+  --validation-manifest 4_ssm_gated_updates/checkpoints/resumed-20261117-220152/procthor_data/manifest.json
+# Unattended: run, refine and repeat until every horizon has a decision,
+# then write $SWEEP/lr_schedule.json. Safe to rerun after an interruption.
+tmux -L persistent new-session -d -s lr-sweep -c "$PWD" \
+  "PYTHONUNBUFFERED=1 $PY 4_ssm_gated_updates/gated_lr_sweep.py auto --plan $SWEEP/plan.json 2>&1 | tee -a $OUT/driver.log"
+$PY 4_ssm_gated_updates/gated_lr_sweep.py report --plan $SWEEP/plan.json   # any time
+# Afterwards, queue and run the 20.48 s redesign pilot:
+$PY 4_ssm_gated_updates/gated_lr_sweep.py pilot --plan $SWEEP/plan.json
+$PY 4_ssm_gated_updates/gated_lr_sweep.py run --plan $SWEEP/plan.json --limit 100
+$PY 4_ssm_gated_updates/gated_lr_sweep.py report --plan $SWEEP/plan.json
+```
+
+(Start the `persistent` tmux server once with `systemd-run --user --scope tmux -L
+persistent new-session -s vio`. New sessions on that server outlive SSH logout.)
+
+Tasks run one at a time, each logging to `<run>.log`, and completed tasks are
+skipped. After an interruption, rerunning continues the unfinished task from its
+last checkpoint into a new `-rN` directory, keeping its fresh-check count. If no
+epoch had finished, it restarts the task. Old directories are listed under the
+task's `attempts` and never reused or deleted. A task that fails three launches
+in a row (for example, an LR that diverges) is marked `failed` and ranked as
+numerically invalid. If the 3e-4 reference diverges, the other candidates are
+compared by raw ATE instead of the ratio to it. The pilot adopts
+`persistent_visual_v2` only if, for both Baseline and Combined, unaligned ATE
+improves by at least 20% with no physical RMSE more than 10% worse.
 
 ## Verification
 

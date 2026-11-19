@@ -1,0 +1,10 @@
+{
+  "cpu_only": true,
+  "recovered_trial_rows": 672,
+  "recovered_state_windows": 54,
+  "recovered_embedding_windows": 32,
+  "retained_checkpoint_rows": 10,
+  "retained_checkpoint_hashes_verified": true,
+  "compressed_logs_verified": true,
+  "automatic_launchers_disabled": true
+}

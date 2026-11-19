@@ -120,6 +120,8 @@ def main():
                 if not module.is_file():raise FileNotFoundError(module)
                 local=dict(limits,step_fuel=min(cap,limits['step_fuel']))
                 config=directory/'evaluation_limits.json';config.write_text(json.dumps(local))
+                # A failed run may leave no report; never score one from an earlier run.
+                (directory/'report.json').unlink(missing_ok=True)
                 command=[sys.executable,'-m','viobench','evaluate',str(module.resolve()),*(args.episodes or []),
                          '--limits',str(config.resolve()),'-o',str(directory.resolve())]
                 with (directory/'evaluate.log').open('w') as stream:

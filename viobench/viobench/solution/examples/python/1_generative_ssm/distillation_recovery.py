@@ -55,13 +55,22 @@ def load_recovery(directory,profiles):
                 collection_next_index=next_collection_index(batch),legacy_migration=True)
 
 
-def save_recovery(directory,epoch,curriculum,students,stage_checkpoints,rolling):
-    state=dict(version=1,completed_epochs=epoch,curriculum=curriculum.state_dict() if curriculum else None,
+def recovery_state(epoch,curriculum,students,stage_checkpoints,rolling):
+    return dict(version=1,completed_epochs=epoch,curriculum=curriculum.state_dict() if curriculum else None,
         curriculum_stage_index=stage_checkpoints.index,
         collection_next_index=next_collection_index(rolling.current.name) if rolling else 0,
         students={name:dict(active=row['active'],best_validation_mean_ate_m=row['best'],
                            completed_epoch=row.get('completed_epoch',epoch),patience=dict(vars(row['patience']))) for name,row in students.items()})
+
+
+def write_recovery(directory,state):
     target=directory/'recovery_state.json';temporary=target.with_suffix('.json.tmp')
     temporary.write_text(json.dumps(state,indent=2,allow_nan=False)+'\n')
     temporary.replace(target)
+    return state
+
+
+def save_recovery(directory,epoch,curriculum,students,stage_checkpoints,rolling):
+    state=recovery_state(epoch,curriculum,students,stage_checkpoints,rolling)
+    write_recovery(directory,state)
     return state
