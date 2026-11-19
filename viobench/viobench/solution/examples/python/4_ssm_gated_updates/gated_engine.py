@@ -6,20 +6,18 @@ import hashlib
 import json
 from pathlib import Path
 import random
-import sys
 from shutil import copyfile
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+from training_policy import apply_learning_rate, read_lr_schedule, physical_selection_score, load_model_weights
 
 import legacy
 from gated_training import ground_truth_targets, validation_inputs, train_student, validate_student
-from gated_recovery import save_latest, restore_latest
+from gated_recovery import save_latest, restore_latest, embedded_recovery
 from distill import curriculum_window, distillation_batch_size
-from gated_curriculum import DEFAULT_GATED_WINDOWS, HORIZON_POLICY
+from gated_curriculum import DEFAULT_GATED_WINDOWS, HORIZON_POLICY, VALIDATION_POLICY, accuracy_targets
 HERE=Path(__file__).resolve().parent
-sys.path.insert(0,str(HERE.parents[4]))
 
 
 @contextmanager
@@ -92,9 +90,15 @@ def main(argv=None):
     parser.add_argument('--ground-truth-only',action='store_true',help='direct supervised training; no teacher loading or inference')
     parser.add_argument('--config',type=Path,help='host config JSON for ground-truth-only training')
     parser.add_argument('--curriculum-order',choices=['joint','staged'],help='default staged for ground-truth-only, joint for distillation')
-    parser.add_argument('--plateau-patience',type=int,default=3,help='fresh checks without meaningful improvement for staged promotion')
-    parser.add_argument('--plateau-tolerance',type=float,default=.05,help='staged near-best tolerance and recent-score stability range')
-    parser.add_argument('--plateau-min-delta',type=float,default=.005,help='relative improvement that resets staged plateau patience')
+    parser.add_argument('--plateau-patience',type=int,default=3,help='fresh checks for the plateau diagnostic; does not control promotion')
+    parser.add_argument('--plateau-tolerance',type=float,default=.05,help='near-best tolerance for the plateau diagnostic')
+    parser.add_argument('--plateau-min-delta',type=float,default=.005,help='relative improvement that resets diagnostic plateau patience')
+    parser.add_argument('--curriculum-max-stage-checks',type=int,default=18,
+                        help='advance after this many fresh validation checks even if accuracy targets are unmet')
+    parser.add_argument('--curriculum-accuracy-patience',type=int,default=3,
+                        help='consecutive fresh checks meeting every physical accuracy target')
+    parser.add_argument('--curriculum-accuracy-targets',type=Path,
+                        help='JSON overrides: metric name -> [base tolerance, tolerance per horizon second]')
     parser.add_argument('--collection-config',type=Path,help='JSON overrides for collection settings; teacher architecture is unchanged')
     parser.add_argument('--profiles',nargs='+',choices=tuple(ALL_PROFILES),help='default all current profiles; warm-start defaults to source profiles')
     parser.add_argument('--out',type=Path)
@@ -108,11 +112,11 @@ def main(argv=None):
     parser.add_argument('--curriculum-windows',type=int,nargs='+',default=list(DEFAULT_GATED_WINDOWS),
                         help='IMU sample counts including the initial state; defaults to 1,2,4,...,8192,12000 intervals plus one')
     parser.add_argument('--stage-epochs',type=int,default=6,
-        help='fresh checks before plateau promotion; epochs per horizon with --no-difficulty-curriculum')
+        help='minimum fresh checks before hybrid promotion; epochs per horizon without difficulty curriculum')
     parser.add_argument('--difficulty-curriculum',action=argparse.BooleanOptionalAction,default=True,
         help='adapt motion, appearance, IMU and window difficulty on improvement or a healthy plateau')
     parser.add_argument('--curriculum-min-batches',type=int,default=3,
-        help='minimum fresh-data exposure before promotion; --stage-epochs is the plateau age in full curriculum mode')
+        help='minimum fresh checks; effective minimum is max(this value, --stage-epochs)')
     parser.add_argument('--curriculum-probe-batches',type=int,default=2,help='fixed held-out minibatches per unfinished difficulty axis')
     parser.add_argument('--min-delta',type=float,default=1e-4,help='absolute validation ATE improvement in metres')
     parser.add_argument('--batch',type=int,help='state minibatch ceiling; default CUDA 8, CPU config value')
@@ -135,6 +139,18 @@ def main(argv=None):
     parser.add_argument('--architecture-config',type=Path,help='JSON mapping profile names to previously fuel-verified settings')
     parser.add_argument('--calibrate-architectures',action=argparse.BooleanOptionalAction,default=True)
     parser.add_argument('--wandb-mode',choices=['online','offline','disabled'],default='online')
+    parser.add_argument('--training-policy', choices=['legacy','corrected_v1'])
+    parser.add_argument('--architecture', choices=['legacy','persistent_visual_v2'])
+    parser.add_argument('--allow-architecture-transfer', action='store_true')
+    parser.add_argument('--velocity-update-bound', type=float, help='persistent_visual_v2; default 0.5 m/s or the warm-start value')
+    parser.add_argument('--orientation-update-bound', type=float, help='persistent_visual_v2; default 0.02 rad or the warm-start value')
+    parser.add_argument('--resume-lr', type=float)
+    parser.add_argument('--lr-schedule', type=Path)
+    parser.add_argument('--validation-manifest', type=Path)
+    parser.add_argument('--curriculum-budget-action', choices=['advance','stop'])
+    parser.add_argument('--fixed-horizon', action='store_true', help='hold --window at motion/noise level zero and probe without promotion')
+    parser.add_argument('--max-fresh-checks', type=int, help='experiment check budget, preserved on exact resume')
+    parser.add_argument('--init-weights', choices=['global','latest','stage'], default='global', help='weight-only initialization; optimizer moments reset')
     parser.add_argument('--lr',type=float,default=3e-4)
     parser.add_argument('--lr-config',type=Path,help='JSON mapping student profiles to fresh-run learning rates')
     parser.add_argument('--kd-weight',type=float,default=1.)
@@ -155,8 +171,60 @@ def main(argv=None):
     parser.add_argument('--seed',type=int,default=17)
     parser.set_defaults(ground_truth_only=True, skip_export=True, calibrate_architectures=False,
                         curriculum_order='staged', curriculum_probe_batches=12, epochs=1500,
-                        stream_data=True, collection_config=HERE/'collection_60s.json')
+                        stream_data=True, collection_config=HERE/'collection_60s.json',
+                        collect_instances=1,loader_workers=0,persistent_workers=False)
     args=parser.parse_args(argv)
+    previous = json.loads((args.warm_start/'distillation.json').read_text()) if args.warm_start else {}
+    args.training_policy = args.training_policy or previous.get('training_policy','legacy')
+    args.architecture = args.architecture or previous.get('architecture','legacy')
+    args.curriculum_budget_action = args.curriculum_budget_action or previous.get('curriculum_budget_action',
+        'stop' if args.training_policy=='corrected_v1' else 'advance')
+    inherited_schedule=None
+    if args.warm_start_stage and args.warm_start:
+        # An exact resume continues the same experiment: keep its opt-in
+        # settings unless explicitly overridden on the command line.
+        if previous.get('fixed_horizon') and not args.fixed_horizon:
+            args.fixed_horizon=True
+            if args.window is None:args.window=previous['curriculum_windows'][0]
+        for key in ('max_fresh_checks','resume_lr'):
+            if getattr(args,key) is None:setattr(args,key,previous.get(key))
+        if args.lr_schedule is None:inherited_schedule=previous.get('lr_schedule')
+        if args.validation_manifest is None:
+            # Validation collection is deterministic; reuse the parent's
+            # recordings while they exist instead of collecting a copy.
+            from gated_data import validation_files
+            candidate=args.warm_start/'procthor_data'/'manifest.json'
+            try:
+                validation_files(candidate);args.validation_manifest=candidate
+                print(f'Reusing validation recordings from {candidate}',flush=True)
+            except (OSError,ValueError,KeyError):pass
+    if args.warm_start_stage and (args.training_policy != previous.get('training_policy','legacy') or
+                                args.architecture != previous.get('architecture','legacy')):
+        parser.error('Exact resume requires matching architecture and supervision; use weight-only initialization for adaptation')
+    if args.allow_architecture_transfer and (not args.warm_start or args.warm_start_stage):
+        parser.error('Architecture transfer requires weight-only --warm-start')
+    if args.architecture != previous.get('architecture','legacy') and args.warm_start and not args.allow_architecture_transfer:
+        parser.error('Architecture changed; specify --allow-architecture-transfer for legacy to v2 initialization')
+    if args.fixed_horizon and (args.window is None or not args.difficulty_curriculum):
+        parser.error('--fixed-horizon requires --window and difficulty probes')
+    if args.max_fresh_checks is not None and args.max_fresh_checks<1:parser.error('--max-fresh-checks must be positive')
+    if args.max_fresh_checks is not None and not args.difficulty_curriculum:
+        parser.error('--max-fresh-checks counts curriculum probes; it requires --difficulty-curriculum')
+    if args.resume_lr is not None and (not np.isfinite(args.resume_lr) or args.resume_lr<=0):parser.error('Invalid --resume-lr')
+    if not all(np.isfinite(v) and v>0 for v in (args.velocity_update_bound,args.orientation_update_bound) if v is not None):
+        parser.error('Visual correction bounds must be positive and finite')
+    try:
+        lr_schedule=read_lr_schedule(args.lr_schedule) if args.lr_schedule else inherited_schedule
+        if args.validation_manifest:
+            from gated_data import validation_files
+            validation_files(args.validation_manifest)
+    except (OSError,ValueError,KeyError) as error:parser.error(str(error))
+    try:
+        target_settings=accuracy_targets(json.loads(args.curriculum_accuracy_targets.read_text())
+                                         if args.curriculum_accuracy_targets else None)
+    except (OSError,ValueError) as error:parser.error(str(error))
+    if not 1<=args.curriculum_accuracy_patience<=max(args.stage_epochs,args.curriculum_min_batches)<=args.curriculum_max_stage_checks:
+        parser.error('Require 1 <= accuracy patience <= minimum stage checks <= maximum stage checks')
     if not args.ground_truth_only or not args.skip_export or args.calibrate_architectures:
         parser.error('This experiment supports supervised GPU checkpoints only')
     if args.architecture_config:
@@ -188,11 +256,16 @@ def main(argv=None):
         args.kd_weight=args.teacher_state_weight=0.
     if args.plateau_patience<2 or not 0<args.plateau_tolerance<1 or not 0<args.plateau_min_delta<1:
         parser.error('plateau patience must be >=2 and tolerance/min-delta must be between 0 and 1')
-    recovery=None
+    recovery=experiment_resume=None
     if args.warm_start_stage:
         if not args.warm_start:parser.error('--warm-start-stage requires --warm-start')
         from distillation_recovery import load_recovery
-        try:recovery=load_recovery(args.warm_start,args.profiles)
+        try:
+            # Newer runs embed recovery metadata in latest.pt (one atomic write).
+            recovery,experiment_resume=embedded_recovery(args.warm_start)
+            if recovery is None:recovery=load_recovery(args.warm_start,args.profiles)
+            elif set(args.profiles)-set(recovery['students']):
+                raise ValueError('Recovery metadata is missing selected students')
         except (OSError,ValueError) as error:parser.error(str(error))
         if args.start_epoch is not None and args.start_epoch!=recovery['completed_epochs']:
             parser.error('--start-epoch differs from saved recovery progress; omit it to continue automatically')
@@ -226,8 +299,9 @@ def main(argv=None):
             if previous.get(key)!=hashlib.sha256((args.teacher/filename).read_bytes()).hexdigest():
                 parser.error('--warm-start teacher weights differ from --teacher')
         for name in args.profiles:
-            weights_file='stage_best.pt' if args.warm_start_stage else 'student.pt'
-            if not all((args.warm_start/name/filename).is_file() for filename in (weights_file,'student.json')):
+            weights_file='stage_best.pt' if args.warm_start_stage or args.init_weights=='stage' else ('latest.pt' if args.init_weights=='latest' else 'student.pt')
+            weight_path=args.warm_start/weights_file if weights_file=='latest.pt' else args.warm_start/name/weights_file
+            if not weight_path.is_file() or not (args.warm_start/name/'student.json').is_file():
                 parser.error(f'--warm-start is missing {name}/{weights_file} or student.json')
     if not np.isfinite([args.embedding_weight,args.embedding_ema]).all() or args.embedding_weight<0 or not 0<=args.embedding_ema<1:
         parser.error('embedding weight must be finite/nonnegative and EMA decay in [0,1)')
@@ -287,7 +361,7 @@ def main(argv=None):
         import tempfile,getpass,os
         user=getpass.getuser()
         if args.stream_dir is None:
-            args.stream_dir=Path(tempfile.gettempdir())/('hyperdrone-distill-'+user)
+            parser.error('Start through train.py to configure a disk-backed recording directory')
         if not os.environ.get('CONTA_CACHE'):
             cache_root=Path('/var/tmp') if Path('/var/tmp').is_dir() else Path(tempfile.gettempdir())
             os.environ['CONTA_CACHE']=str(cache_root/('hyperdrone-'+user)/'scene-assets')
@@ -329,13 +403,28 @@ def main(argv=None):
     provenance['preserve_curriculum_progress']=bool(recovery)
     provenance['collection_start_index']=args.resume_collection_index
     provenance.update(difficulty_curriculum=args.difficulty_curriculum,
-                      curriculum_progression=('all_students_ready_or_sole_holdout_timeout' if args.curriculum_order=='staged' else 'all_students_ready'),
-                      sole_holdout_timeout_epochs=5 if args.curriculum_order=='staged' else None,curriculum_pause='ready_and_trajectory_plateau',
+                      curriculum_progression='all_students_competent_or_stage_budget_exhausted',
+                      curriculum_max_stage_checks=args.curriculum_max_stage_checks,
+                      curriculum_accuracy_patience=args.curriculum_accuracy_patience,
+                      curriculum_accuracy_targets=target_settings,curriculum_pause='none',
                       curriculum_transition='restore_stage_best_model_and_optimizer',
                       curriculum_min_batches=args.curriculum_min_batches,curriculum_probe_batches=args.curriculum_probe_batches,
                       curriculum_settings={key:getattr(cfg,key) for key in vars(cfg) if key.startswith('CURRICULUM_')})
-    provenance['experiment']='4_ssm_gated_updates'
+    provenance.update(training_policy=args.training_policy, architecture=args.architecture,
+        parent_training_policy=previous.get('training_policy','legacy') if previous else None,
+        selection_policy='physical_stage_unaligned_global_v1' if args.training_policy=='corrected_v1' else 'sim3',
+        resume_lr=args.resume_lr,lr_schedule=lr_schedule,validation_manifest=str(args.validation_manifest) if args.validation_manifest else None,
+        curriculum_budget_action=args.curriculum_budget_action,fixed_horizon=args.fixed_horizon,
+        max_fresh_checks=args.max_fresh_checks,init_weights=args.init_weights)
+    provenance['experiment']='4_ssm_gated_updates' 
+    import resource_limits
+    from dataclasses import asdict
+    if resource_limits.ACTIVE is not None:
+        provenance['resource_limits']=asdict(resource_limits.ACTIVE.limits)
+        provenance['resource_directory']=str(resource_limits.ACTIVE.root)
+    provenance['stored_camera_hz']=20
     provenance['horizon_policy']=HORIZON_POLICY
+    provenance['curriculum_validation_policy']=VALIDATION_POLICY
     provenance['horizon_steps']=[length-1 for length in windows]
     provenance['horizon_seconds']=[(length-1)/200. for length in windows]
     provenance['image_height']=cfg.H
@@ -352,7 +441,7 @@ def main(argv=None):
     import wandb
     run=wandb.init(project=cfg.WANDB_PROJECT,dir=str(args.out),job_type='gated_supervised',
         mode=args.wandb_mode,config=provenance,name=args.out.name)
-    from distillation_tracking import DistillationLogger
+    from gated_tracking import GatedLogger as DistillationLogger
     print(f'W&B: project={cfg.WANDB_PROJECT}, mode={args.wandb_mode}, URL={run.url}',flush=True)
     metric_namespace='supervised' if args.ground_truth_only else 'distillation'
     with DistillationLogger(run,args.profiles,namespace=metric_namespace) as tracking:
@@ -362,6 +451,10 @@ def main(argv=None):
             directory=args.out/name;directory.mkdir()
             prior_spec=json.loads((args.warm_start/name/'student.json').read_text()) if args.warm_start else None
             spec=dict(prior_spec or overrides.get(name,ALL_PROFILES[name]),profile=name)
+            spec.update(architecture=args.architecture, training_policy=args.training_policy)
+            for key,default in (('velocity_update_bound',.5),('orientation_update_bound',.02)):
+                value=getattr(args,key)
+                spec[key]=value if value is not None else (prior_spec or {}).get(key,default)
             if spec['fuel']!=ALL_PROFILES[name]['fuel']:raise ValueError(f'{name} architecture changes its fuel cap')
             if not args.warm_start and name not in overrides and spec.get('kind')=='mamba2' and args.calibrate_architectures:
                 spec=select_architecture(name,directory,args.wasi_sdk,args.verify_frames)
@@ -374,7 +467,13 @@ def main(argv=None):
                     model.load_state_dict(stage_source['model'])
                     recovery_sources[name]={key:stage_source[key] for key in ('stage','stage_index','epoch','validation_mean_ate_m')}
                     copyfile(args.warm_start/name/'stage_best.pt',directory/'stage_best.pt')
-                else:model.load_state_dict(torch.load(args.warm_start/name/'student.pt',map_location=device,weights_only=True))
+                else:
+                    if args.init_weights=='latest':
+                        source_state=torch.load(args.warm_start/'latest.pt',map_location='cpu',weights_only=False)['models'][name]['model']
+                    elif args.init_weights=='stage':
+                        source_state=torch.load(args.warm_start/name/'stage_best.pt',map_location='cpu',weights_only=True)['model']
+                    else:source_state=torch.load(args.warm_start/name/'student.pt',map_location='cpu',weights_only=True)
+                    load_model_weights(model,source_state,transfer=args.allow_architecture_transfer)
                 if recovery and (args.warm_start/name/'student.pt').is_file():
                     copyfile(args.warm_start/name/'student.pt',directory/'student.pt')
                 else:save_weights(model.state_dict(),directory/'student.pt')
@@ -414,13 +513,15 @@ def main(argv=None):
                 curriculum_class=DistillationCurriculum
                 extra={}
                 if args.curriculum_order=='staged':
-                    from student_curriculum import StagedStudentCurriculum
-                    curriculum_class=StagedStudentCurriculum
+                    from gated_curriculum import GatedStudentCurriculum
+                    curriculum_class=GatedStudentCurriculum
                     extra=dict(plateau_patience=args.plateau_patience,tolerance=args.plateau_tolerance,
-                               improvement=args.plateau_min_delta)
+                               improvement=args.plateau_min_delta,max_stage_checks=args.curriculum_max_stage_checks,
+                               accuracy_patience=args.curriculum_accuracy_patience,targets=target_settings,
+                               budget_action=args.curriculum_budget_action,fixed_horizon=args.fixed_horizon)
                 curriculum=curriculum_class(cfg,windows,args.start_epoch,args.stage_epochs,
                     args.curriculum_min_batches,args.curriculum_probe_batches,**extra)
-                if (recovery and recovery['curriculum'] is not None) or (args.warm_start and (args.warm_start/'curriculum_state.json').is_file()):
+                if (recovery and recovery['curriculum'] is not None) or (args.warm_start and not args.fixed_horizon and args.training_policy==previous.get('training_policy','legacy') and (args.warm_start/'curriculum_state.json').is_file()):
                     state=recovery['curriculum'] if recovery else json.loads((args.warm_start/'curriculum_state.json').read_text())
                     if state is not None:
                         curriculum.load_state_dict(state,preserve_progress=bool(recovery),
@@ -428,15 +529,21 @@ def main(argv=None):
                         if getattr(curriculum,'horizon_migration',None):
                             print('Curriculum horizon migration:',json.dumps(curriculum.horizon_migration),flush=True)
                             run.config.update({'curriculum_horizon_migration':curriculum.horizon_migration})
+                        if getattr(curriculum,'validation_migration',None):
+                            print('Curriculum validation migration:',json.dumps(curriculum.validation_migration),flush=True)
+                            run.config.update({'curriculum_validation_migration':curriculum.validation_migration})
                         (args.out/'curriculum_state.json').write_text(json.dumps(curriculum.state_dict(),indent=2)+'\n')
                     if recovery and (state is None or 'student_gates' not in state):
                         print('Legacy recovery: saved difficulty restored; no per-student readiness counters were available.',flush=True)
-                if recovery:tracking.curriculum(args.start_epoch,curriculum,None)
+                run.config.update({'effective_hybrid_curriculum':dict(
+                    minimum_stage_checks=curriculum.minimum,maximum_stage_checks=curriculum.max_stage_checks,
+                    accuracy_patience=curriculum.accuracy_patience,accuracy_targets=curriculum.accuracy_target_settings)})
             for name,row in students.items():
                 if recovery:run.summary[name+'/status']=('early_stopped' if not row['active'] else
                     'paused_waiting_for_curriculum' if curriculum and name in curriculum.paused else 'training')
             if recovery:
                 restore_latest(args.warm_start, students)
+            apply_learning_rate(students,args.resume_lr,lr_schedule,(curriculum.length-1)/200. if curriculum else (windows[0]-1)/200.)
             data=TrainingData(args,cfg,stack)
             if recovery:data.epoch=args.start_epoch
             # Fail early for a dataset too short for the requested final horizon.
@@ -444,7 +551,7 @@ def main(argv=None):
             parallel=args.parallel and args.parallel_mode!='serial'
             pipeline=stack.enter_context(DistillationPipeline(device,students,parallel,args.max_concurrent,args.target_prefetch,
                                                              gpu_gate=args.gpu_collection_gate))
-            from distillation_checkpoints import StageBestCheckpoints
+            from gated_recovery import SafeStageBestCheckpoints as StageBestCheckpoints
             stage_checkpoints=StageBestCheckpoints()
             if recovery:
                 stage_checkpoints.recover(recovery_sources)
@@ -458,6 +565,11 @@ def main(argv=None):
                 run.log({metric_namespace+'/epoch':args.start_epoch,'curriculum/stage_index':stage_checkpoints.index,
                          'curriculum/recovered_progress':True})
                 if curriculum:tracking.curriculum(args.start_epoch,curriculum,None)
+            fresh_checks=0
+            if recovery and experiment_resume:fresh_checks=experiment_resume.get('fresh_checks',0)
+            elif recovery and (args.warm_start/'experiment_state.json').exists():
+                fresh_checks=json.loads((args.warm_start/'experiment_state.json').read_text())['fresh_checks']
+            stop_reason=None
             tuned=set();batch_limits={length:distillation_batch_size(cfg.BATCH,length) for length in windows}
             mode_label='Supervised' if args.ground_truth_only else 'Distillation'
             print(f'{mode_label} scheduling: {"parallel CUDA streams" if pipeline.parallel else "serial"}; '
@@ -480,11 +592,14 @@ def main(argv=None):
                     print(f'{mode_label} stage restore:',json.dumps(restored),flush=True)
                     with (args.out/'stage_restores.jsonl').open('a') as stream:stream.write(json.dumps(restored)+'\n')
                     tracking.stage_restore(epoch+1,restored)
+                apply_learning_rate(students,args.resume_lr,lr_schedule,(length-1)/200.)
                 training=curriculum.training_students(active) if curriculum else active
                 paused=tuple(name for name in active if name not in training)
                 with_images=any(row['model'].settings.get('kind')!='imu_affine' for row in active.values())
                 train_terms={name:{} for name in active}
                 validation_terms={name:{} for name in active}
+                current_stage_validation={}
+                current_stage_accuracy={}
                 train_losses={name:[0.,0] for name in active};validation={name:[0.,0] for name in active}
                 prepare=(partial(ground_truth_targets,device=device,with_images=with_images) if args.ground_truth_only else
                          partial(frame_targets,teacher_frame=frame,teacher_state=teacher,device=device,with_images=with_images,
@@ -516,10 +631,12 @@ def main(argv=None):
                             for key,value in active[name].get('validation_loss_terms',{}).items():
                                 validation_terms[name][key]=validation_terms[name].get(key,0)+value*count
                 ate_scores={name:row['validation_metric'].result()['mean_ate_m'] for name,row in active.items()}
-                with pipeline.gpu_work():stage_checkpoints.observe(active,ate_scores,epoch+1)
+                if args.training_policy=='legacy':
+                    with pipeline.gpu_work():stage_checkpoints.observe(active,ate_scores,epoch+1)
                 curriculum_event=None
                 if curriculum:
                     cycle_id=f'{args.out}:{data.batch_id}'
+                    if not args.stream_data:cycle_id+=f':epoch-{epoch}'
                     fresh_cycle=curriculum.fresh(cycle_id)
                     probe_scores={}
                     if fresh_cycle:
@@ -528,14 +645,26 @@ def main(argv=None):
                         probe_prepare=lambda batch:validation_inputs(batch,device,with_images)[:2]
                         for axis in curriculum.probe_axes:
                             totals={name:[0.,0] for name in active}
+                            squared_errors={name:{} for name in active}
                             probe_loader=curriculum.probe_loader(data.val_data,axis,pipeline.training_batch_size)
                             with pipeline.batches(probe_loader,probe_prepare) as batches:
                                 for prepared in batches:
                                     count=len(prepared[0][0]['imu'])
                                     for name,loss in pipeline.run(active,prepared,partial(validate_student,device=device)).items():
                                         totals[name][0]+=loss*count;totals[name][1]+=count
+                                        for key,value in active[name]['curriculum_squared_errors'].items():
+                                            squared_errors[name][key]=squared_errors[name].get(key,0.)+value*count
                             probe_scores[axis]={name:value[0]/value[1] for name,value in totals.items()}
-                        curriculum_event=curriculum.update(cycle_id,probe_scores,ate_scores)
+                            current_stage_validation.update(probe_scores[axis])
+                            current_stage_accuracy.update({name:{key:(value/totals[name][1])**.5
+                                for key,value in errors.items()} for name,errors in squared_errors.items()})
+                        if args.training_policy=='corrected_v1':
+                            scores={name:physical_selection_score(value,curriculum.current_accuracy_targets()) for name,value in current_stage_accuracy.items()}
+                            with pipeline.gpu_work():stage_checkpoints.observe(active,scores,epoch+1)
+                        curriculum_event=curriculum.update(cycle_id,probe_scores,ate_scores,current_stage_accuracy)
+                        fresh_checks+=1
+                        if curriculum_event.get('stop_requested'):stop_reason='stage_budget_exhausted'
+                        if args.max_fresh_checks and fresh_checks>=args.max_fresh_checks:stop_reason='fresh_check_limit' 
                     if hasattr(curriculum,'finish_epoch'):
                         forced=curriculum.finish_epoch(epoch+1,active,paused,fresh_batch=fresh_cycle)
                         if forced:
@@ -548,6 +677,9 @@ def main(argv=None):
                         with (args.out/'curriculum_metrics.jsonl').open('a') as stream:stream.write(json.dumps(curriculum_event)+'\n')
                         print(f'{mode_label} curriculum:',json.dumps(curriculum_event),flush=True)
                     tracking.curriculum(epoch+1,curriculum,curriculum_event)
+                if curriculum is None and args.training_policy=='corrected_v1':
+                    scores={name:row['validation_metric'].result()['unaligned_ate_rmse_m'] for name,row in active.items()}
+                    with pipeline.gpu_work():stage_checkpoints.observe(active,scores,epoch+1)
                 measurement=timer.result()
                 measurement.update(active_profiles=list(active),parallel=pipeline.parallel,
                                    collector_oom_retries=data.rolling.oom_retries if data.rolling else 0,
@@ -564,7 +696,8 @@ def main(argv=None):
                       f'({len(training)} training, {len(paused)} paused profiles; includes validation/data wait)',flush=True)
                 epoch_records={}
                 for name,row in active.items():
-                    score=row['validation_metric'].result()['mean_ate_m']
+                    metric_result=row['validation_metric'].result()
+                    score=metric_result['unaligned_ate_rmse_m' if args.training_policy=='corrected_v1' else 'mean_ate_m']
                     if not np.isfinite(score):raise ValueError(f'Nonfinite {name} validation loss')
                     improved=score<row['best']-args.min_delta
                     if improved:
@@ -577,14 +710,16 @@ def main(argv=None):
                     row['completed_epoch']=epoch+1
                     record=dict(epoch=epoch+1,train_loss=(train_losses[name][0]/train_losses[name][1] if train_losses[name][1] else None),
                         curriculum_stage=stage_checkpoints.index,
-                        stage_best_epoch=stage_checkpoints.best[name]['epoch'],
-                        stage_best_validation_mean_ate_m=stage_checkpoints.best[name]['validation_mean_ate_m'],
+                        # Empty until this stage's first observation (corrected
+                        # policy observes on fresh checks only).
+                        stage_best_epoch=stage_checkpoints.best.get(name,{}).get('epoch'),
+                        stage_best_validation_mean_ate_m=stage_checkpoints.best.get(name,{}).get('validation_mean_ate_m'),
                         training_samples=train_losses[name][1],training_paused=name in paused,
                         paused_waiting_for_curriculum=bool(curriculum and name in curriculum.paused),
                         validation_state_loss=validation[name][0]/validation[name][1],
                         validation_unaligned_mte_m=row['validation_metric'].result()['unaligned_mte_m'],
                         validation_unaligned_ate_rmse_m=row['validation_metric'].result()['unaligned_ate_rmse_m'],
-                        validation_mean_ate_m=score,best_validation_mean_ate_m=row['best'],window=length,
+                        validation_mean_ate_m=metric_result['mean_ate_m'],best_validation_mean_ate_m=row['best'],window=length,
                         learning_rate=row['optimizer'].param_groups[0]['lr'],
                         non_improving_data_cycles=bad,recording_batch=data.batch_id,active=row['active'])
                     record.update({'train_'+key:float(value/train_losses[name][1])
@@ -592,8 +727,21 @@ def main(argv=None):
                     record.update({'validation_'+key:float(value/validation[name][1])
                                    for key,value in validation_terms[name].items()})
                     record.update({'procthor_val/validation_loss': validation[name][0]/validation[name][1],
-                                   'procthor_val/sim3_ate_rmse_m': score,
+                                   'procthor_val/sim3_ate_rmse_m': metric_result['mean_ate_m'],
                                    'procthor_val/unaligned_ate_rmse_m': row['validation_metric'].result()['unaligned_ate_rmse_m']})
+                    record['checkpoint_selection_score']=score
+                    record['fresh_checks']=fresh_checks
+                    record['procthor_curriculum_val/fresh_data_check']=name in current_stage_validation
+                    if name in current_stage_validation:
+                        prefix='procthor_curriculum_val/'
+                        record.update({prefix+'validation_loss':current_stage_validation[name],
+                                       prefix+'horizon_imu_steps':length-1,prefix+'horizon_seconds':(length-1)/200.})
+                        record.update({prefix+axis+'_level':level for axis,level in stage['levels'].items()})
+                        record.update({prefix+key:value for key,value in current_stage_accuracy[name].items()})
+                        record.update({prefix+'target_'+key:value for key,value in curriculum_event['accuracy_targets'].items()})
+                        record[prefix+'stage_checks']=curriculum_event['stage_checks']
+                        record[prefix+'competent']=curriculum_event['students'][name]['competent']
+                        record[prefix+'promotion_reason']=curriculum_event['readiness'][curriculum_event['phase']][name]
                     with (row['directory']/'metrics.jsonl').open('a') as stream:stream.write(json.dumps(record)+'\n')
                     epoch_records[name]=record
                     training_label=f'{record["train_loss"]:.6g}' if record['train_loss'] is not None else 'paused'
@@ -603,17 +751,22 @@ def main(argv=None):
                           f'val_loss={record["validation_state_loss"]:.6g}, '
                           f'jepa_loss={record.get("train_embedding_loss", 0.):.6g}, '
                           f'alignment_loss={record.get("train_alignment_raw", 0.):.6g}, '
-                          f'Mean Sim(3)-aligned ATE={score:.6g} m, stale cycles={bad}, status={status}',flush=True)
-                from distillation_recovery import save_recovery
-                save_recovery(args.out,epoch+1,curriculum,students,stage_checkpoints,data.rolling)
-                save_latest(args.out, students)
+                          f'Selection ATE={score:.6g} m, stale cycles={bad}, status={status}',flush=True)
+                from distillation_recovery import recovery_state, write_recovery
+                state=recovery_state(epoch+1,curriculum,students,stage_checkpoints,data.rolling)
+                experiment=dict(fresh_checks=fresh_checks,stop_reason=stop_reason)
+                save_latest(args.out,students,recovery=state,experiment=experiment)
+                # Human-readable mirrors; latest.pt is authoritative on resume.
+                write_recovery(args.out,state)
+                temporary=args.out/'experiment_state.json.tmp'
+                temporary.write_text(json.dumps(experiment));temporary.replace(args.out/'experiment_state.json')
                 tracking.epoch(epoch+1,epoch_records,measurement,data.rolling.last_wait_seconds if data.rolling else 0.)
-                if not any(row['active'] for row in students.values()):break
+                if stop_reason or not any(row['active'] for row in students.values()):break
         for name,row in students.items():
             tracking.phase('saving_checkpoint' if args.skip_export else 'exporting:'+name)
             row['model'].load_state_dict(torch.load(row['directory']/'student.pt',map_location=device,weights_only=True))
             run.summary[name+'/checkpoint']=str(row['directory']/'student.pt')
-            run.summary[name+'/stop_reason']='epoch_limit' if row['active'] else 'early_stopping'
+            run.summary[name+'/stop_reason']=stop_reason or ('epoch_limit' if row['active'] else 'early_stopping')
             if not args.skip_export:
                 from students.export import export_student
                 module=export_student(row['model'].eval(),row['directory']/'native',args.wasi_sdk,args.verify_frames)

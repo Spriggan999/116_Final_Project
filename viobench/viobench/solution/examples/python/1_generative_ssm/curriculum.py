@@ -239,8 +239,7 @@ class AugmentedDataset(Dataset):
             else:
                 result['cam_images'] = difficult_images(result['cam_images'], strength, self.cfg, generator)
             result['imu'] = self.flight_imu(item[0])[start:start+self.length]
-            gravity = -result['imu'][1:min(self.length, 11), :3].mean(0).clamp(-20, 20)
-            result['gravity'] = 9.81*gravity/torch.linalg.vector_norm(gravity).clamp_min(1e-5)
+            result['gravity'] = self.base.initial_gravity(self.flight_imu(item[0]), start, self.length)
         # Keys identify recordings, rather than transient indices in rolling batches.
         result['curriculum_key'] = sample_key(self.base,item)
         return result
@@ -299,7 +298,9 @@ def curriculum_sampler(dataset, schedule, progress, seed):
     available = sorted(set(bins.tolist()))
     if getattr(schedule,'all_easier',False):
         current=max((n for n in available if n<=stage),default=min(available))
-        easier=[n for n in available if n<stage]
+        # Relative to `current`, which falls back below `stage` when that bin is
+        # empty; relative to `stage` it would also be counted as easier.
+        easier=[n for n in available if n<current]
         allocations=[(current,schedule.mix[0] if easier else 1.)]
         if easier:allocations.extend((n,schedule.mix[1]/len(easier)) for n in easier)
         for selected,probability in allocations:

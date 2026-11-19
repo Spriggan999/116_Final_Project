@@ -104,6 +104,15 @@ class StateWindows(Dataset):
     def __getitem__(self,idx):
         return self.window(self.items[idx],self.length,idx)
 
+    def initial_gravity(self,flight_imu,start,length):
+        """Initial-body gravity inferred from the accelerometer, not simulator truth.
+
+        Single source for this estimate: curriculum augmentation re-runs it on
+        noisy IMU. Subclasses may override (the gated experiment uses a causal one).
+        """
+        g_hat=-flight_imu[start+1:start+min(length,11),:3].mean(0).clamp(-20,20)
+        return 9.81*g_hat/torch.linalg.vector_norm(g_hat).clamp_min(1e-5)
+
     def window(self,item,length,cache_index=None):
         eidx,start=item;e=self.store.entries[eidx];T=length
         stride=e['stride']
@@ -115,11 +124,8 @@ class StateWindows(Dataset):
         # The VIO recurrent state initializes velocity to zero, so train *delta velocity*
         # relative to the window's initial velocity (which is unknown at inference).
         vel=(R0T@(v-v[0]).T).T
-        # Initial gravity is inferred from the accelerometer, not simulator truth.
         imu=e['imu'][start:start+T]
-        g_hat=-imu[1:min(T,11),:3].mean(0)
-        g_hat=g_hat.clamp(-20,20)
-        g_hat=9.81*g_hat/torch.linalg.vector_norm(g_hat).clamp_min(1e-5)
+        g_hat=self.initial_gravity(e['imu'],start,T)
         cam_start=start//stride
         n_cam=(T-1)//stride+1
         images=e['cams'][cam_start:cam_start+n_cam]

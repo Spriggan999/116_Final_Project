@@ -2,8 +2,8 @@
   "environment": "myenv: CUDA host checks on NVIDIA GeForce RTX 5080; sandbox process visibility differs from host GPU access",
   "tests": {
     "command": "python -m unittest discover -s 4_ssm_gated_updates/tests -v",
-    "total": 17,
-    "passed": 17,
+    "total": 43,
+    "passed": 43,
     "skipped": 0
   },
   "smoke": {
@@ -139,5 +139,80 @@
         "peak_allocated_mib": 1252.451171875
       }
     ]
+  },
+  "resource_protection": {
+    "defaults": {
+      "min_filesystem_free_gib": 10,
+      "min_quota_free_gib": 1,
+      "min_available_ram_gib": 8,
+      "max_host_rss_gib": 24,
+      "max_scratch_gib": 16,
+      "max_run_gib": 1,
+      "recording_ring_gib": 12
+    },
+    "scratch": "disk-backed /var/tmp/gated-updates-UID; tmpfs recording paths rejected",
+    "collection": "20 Hz stored RGB, 200 Hz IMU; two scenes/one flight each; one collector instance; disk-streamed byte-capped NPZ",
+    "validation": "one retained scratch set referenced by manifest; no home-directory NPZ copy",
+    "verified": [
+      "low disk and quota refusals",
+      "low RAM watchdog cancellation/main-thread interruption",
+      "RSS and owned-directory budgets",
+      "partial NPZ cleanup",
+      "atomic checkpoint failure preserves previous file",
+      "recording ring cleanup retains only referenced validation",
+      "cache relocation and two-job build cap",
+      "real GPU collector: 41 IMU samples and 5 images at 640x480",
+      "CPU full training epoch with active resource guard",
+      "standalone ProcTHOR validation under resource guard"
+    ],
+    "real_collection": {
+      "samples": 41,
+      "camera_images": 5,
+      "frame_stride": 10,
+      "resolution": [
+        640,
+        480
+      ],
+      "completed": true
+    },
+    "full_training_started": false
+  },
+  "curriculum_validation_revision": {
+    "policy": "current_stage_hybrid_accuracy_budget_v2",
+    "distribution": "current horizon, motion bin, IMU noise and visual noise on fixed held-out windows",
+    "defaults": {
+      "minimum_fresh_checks": 6,
+      "consecutive_competent_checks": 3,
+      "maximum_fresh_checks": 18
+    },
+    "targets": "configurable base-plus-horizon physical RMSE targets, scaled by difficulty; provisional defaults",
+    "promotion": "all active models competent or bounded stage-budget exhaustion; no peer freezing",
+    "plateau": "diagnostic only",
+    "public_validation": "unchanged",
+    "full_flight_procthor": "diagnostics, checkpoint selection and final early stopping; excluded from promotion",
+    "verified": [
+      "minimum exposure before competence promotion",
+      "consecutive accuracy qualification across all components and peers",
+      "improving loss does not delay competence",
+      "poor accuracy cannot qualify through plateau",
+      "bounded advancement with explicit budget_exhausted reason",
+      "window advancement resets budget",
+      "final stage does not advance out of bounds",
+      "physical vector and geodesic errors exclude initialized sample",
+      "batch-independent fixed probes",
+      "old policy migration preserves difficulty and horizon",
+      "hybrid resume retains budgets, targets and accuracy history",
+      "hybrid W&B forced-advance event",
+      "all-four CPU old-policy resume through epoch 3",
+      "all-four CPU training with two forced stage transitions"
+    ],
+    "stopped_run": {
+      "directory": "20261116-105526-522189",
+      "checkpoint_epoch": 80,
+      "latest_and_recovery_agree": true,
+      "four_models_present": true,
+      "migration_verified": true,
+      "restarted": false
+    }
   }
 }

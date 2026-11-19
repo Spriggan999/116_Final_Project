@@ -6,9 +6,16 @@ from performance import fp32_physics
 
 
 def geodesic(rot_gt,rot_pred):
+    """Rotation angle of R_gtᵀ R_pred, accurate and differentiable near zero.
+
+    atan2(|vee(D-Dᵀ)|/2, (tr D-1)/2). The former clamped acos had a 0.256° floor
+    with zero gradient below it; the 1e-12 keeps identity (tick 0) finite.
+    """
     d=rot_gt.transpose(-1,-2)@rot_pred
-    cc=((d.diagonal(dim1=-2,dim2=-1).sum(-1)-1)/2).clamp(-1+1e-5,1-1e-5)
-    return torch.acos(cc)
+    cosine=(d.diagonal(dim1=-2,dim2=-1).sum(-1)-1)/2
+    skew=torch.stack((d[...,2,1]-d[...,1,2],d[...,0,2]-d[...,2,0],d[...,1,0]-d[...,0,1]),-1)
+    sine=torch.sqrt(skew.square().sum(-1)/4+1e-12)
+    return torch.atan2(sine,cosine)
 
 
 @fp32_physics

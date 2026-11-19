@@ -1,4 +1,5 @@
 """Lossless fast recording writes, disk caps and collection telemetry."""
+import io
 import json
 from pathlib import Path
 import sys
@@ -78,7 +79,8 @@ def test_only_builtin_collector_receives_compression_flag(tmp_path,monkeypatch,c
     commands=[]
     class Child:
         returncode=0
-        def __init__(self,command,**kwargs):commands.append(command)
+        def __init__(self,command,**kwargs):
+            commands.append(command);self.stdout=io.StringIO('')
         def poll(self):return 0
     monkeypatch.setattr(streaming.subprocess,'Popen',Child)
     batches=RollingBatches(tmp_path,stream_cfg(COLLECT_COMPRESSION_LEVEL=1),

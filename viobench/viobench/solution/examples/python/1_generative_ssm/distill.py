@@ -144,7 +144,7 @@ def train_student(name,row,payload,device,weights,embedding_weight=.1,embedding_
     row['loss_terms']=terms
     if not torch.isfinite(loss):raise ValueError(f'Nonfinite {name} distillation loss')
     row['optimizer'].zero_grad(set_to_none=True);loss.backward()
-    torch.nn.utils.clip_grad_norm_(model.parameters(),1.)
+    row['gradient_norm_preclip']=torch.nn.utils.clip_grad_norm_(model.parameters(),1.).detach()
     row['optimizer'].step()
     if embedding_weight and model.settings.get('jepa_target'):
         from student_embedding import update_target
@@ -333,6 +333,7 @@ def main(argv=None):
     parser.add_argument('--calibrate-architectures',action=argparse.BooleanOptionalAction,default=True)
     parser.add_argument('--wandb-mode',choices=['online','offline','disabled'],default='online')
     parser.add_argument('--lr',type=float,default=3e-4)
+    parser.add_argument('--lr-config',type=Path,help='JSON mapping student profiles to fresh-run learning rates')
     parser.add_argument('--kd-weight',type=float,default=1.)
     parser.add_argument('--teacher-state-weight',type=float,default=.5)
     parser.add_argument('--ground-truth-weight',type=float,default=1.)
@@ -361,6 +362,15 @@ def main(argv=None):
     if args.profiles is None:args.profiles=list(PROFILES)
     if not args.ground_truth_only and args.teacher is None:parser.error('--teacher is required for distillation')
     if args.config and not args.ground_truth_only:parser.error('--config is only for ground-truth-only training')
+    learning_rates={}
+    if args.lr_config:
+        try:
+            learning_rates=json.loads(args.lr_config.read_text())
+            if not isinstance(learning_rates,dict) or any(name not in ALL_PROFILES for name in learning_rates):
+                raise ValueError('LR config must map known student profiles to rates')
+            if any(isinstance(value,bool) or not isinstance(value,(int,float)) or not np.isfinite(value) or value<=0 for value in learning_rates.values()):
+                raise ValueError('Per-profile learning rates must be finite and positive')
+        except (OSError,ValueError) as error:parser.error(str(error))
     args.curriculum_order=args.curriculum_order or ('staged' if args.ground_truth_only else 'joint')
     if args.ground_truth_only:
         args.kd_weight=args.teacher_state_weight=0.
@@ -481,6 +491,7 @@ def main(argv=None):
         plateau_patience=args.plateau_patience,plateau_tolerance=args.plateau_tolerance,plateau_min_delta=args.plateau_min_delta,
         state_sha256=hashlib.sha256((args.teacher/'state_student.pt').read_bytes()).hexdigest() if not args.ground_truth_only else None,
         frame_sha256=hashlib.sha256((args.teacher/'frame_student.pt').read_bytes()).hexdigest() if not args.ground_truth_only else None,
+        lr=args.lr,learning_rates={name:learning_rates.get(name,args.lr) for name in args.profiles},
         alignment_weight=args.alignment_weight,alignment_scope='current_training_horizon_complete_validation_flights',
         alignment_fit='detached_umeyama_sim3_camera_positions',
         embedding_weight=args.embedding_weight,embedding_ema=args.embedding_ema,
@@ -540,7 +551,7 @@ def main(argv=None):
                     copyfile(args.warm_start/name/'student.pt',directory/'student.pt')
                 else:save_weights(model.state_dict(),directory/'student.pt')
             (directory/'student.json').write_text(json.dumps(spec,indent=2)+'\n')
-            optimizer=adamw(model.parameters(),lr=args.lr)
+            optimizer=adamw(model.parameters(),lr=learning_rates.get(name,args.lr))
             if stage_source is not None:optimizer.load_state_dict(stage_source['optimizer'])
             stage_source=None
             students[name]=dict(model=model,optimizer=optimizer,embedding_weight=args.embedding_weight,alignment_weight=args.alignment_weight,

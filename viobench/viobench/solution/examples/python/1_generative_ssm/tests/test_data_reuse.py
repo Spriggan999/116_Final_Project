@@ -168,7 +168,7 @@ def test_reuse_retains_loaded_training_and_fixed_validation(tmp_path,monkeypatch
                  state=state,imu=imu,dt=np.float32(.005),frame_stride=5,
                  scene_id=spec['scene_offset'])
     monkeypatch.setattr(streaming,'RollingBatches',
-        lambda root,cfg,collector:RollingBatches(root,cfg,collect=producer))
+        lambda root,cfg,collector,**_:RollingBatches(root,cfg,collect=producer))
     cfg=SimpleNamespace(**{k:v for k,v in vars(config).items() if k.isupper()})
     cfg.__dict__.update(vars(stream_cfg(STREAM_DATA=True,STREAM_MAX_PASSES_PER_BATCH=3)))
     cfg.H,cfg.W,cfg.WINDOW=24,32,11

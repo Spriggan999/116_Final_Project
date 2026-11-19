@@ -20,6 +20,14 @@ The smallest default is now `1k`, with a real 2D CNN, the same nine-correction o
 students and a 6,000-fuel export cap (5,195 measured),
 replacing the scalar `500` tier. Saved 500-fuel checkpoints remain exportable.
 
+For fresh-checkpoint learning-rate comparisons across all eight students and the
+teacher, see [the direct LR experiment guide](LR_SWEEP_README.md). It explains
+the fixed-data protocol, W&B metrics, provisional results and per-student
+`--lr-config` support.
+The expanded window sweep was stopped by the user. Its surviving rates, missing
+windows and cleanup record are in [the recovery README](LR_SWEEP_RECOVERY_README.md).
+Its saved launchers are disabled; recovery uses no GPU.
+
 This guide explains how to train the full-resolution teacher with SL followed by
 PPO, produce `.wasm` submissions for both stages, and evaluate them.
 

@@ -78,8 +78,14 @@ def loader_options(config,frame_pairs=False):
 def adamw(parameters,**options):
     """Fuse CUDA parameter updates; retain the ordinary optimizer on CPU."""
     parameters=tuple(parameters)
-    options.setdefault('fused',bool(getattr(cfg,'FUSED_ADAMW',True) and parameters
-                                   and all(parameter.is_cuda for parameter in parameters)))
+    if parameters and isinstance(parameters[0],dict):
+        # Materialize group generators once so checking device placement does
+        # not consume parameters before AdamW constructs its groups.
+        parameters=tuple(dict(group,params=tuple(group['params'])) for group in parameters)
+        flat=tuple(parameter for group in parameters for parameter in group['params'])
+    else:flat=parameters
+    options.setdefault('fused',bool(getattr(cfg,'FUSED_ADAMW',True) and flat
+                                   and all(parameter.is_cuda for parameter in flat)))
     return torch.optim.AdamW(parameters,**options)
 
 

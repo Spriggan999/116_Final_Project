@@ -1,0 +1,378 @@
+{
+  "actions": [
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/1m_ssm/student.pt",
+      "original_bytes": 145769,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 164352,
+      "sha256": "829957b3e598cd81fd6fb057533becdb130d701a65de5c0bcb2eec8e76642479",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/1m_ssm/student.pt",
+      "confirmed_sha256": "b98f660a6c5ff20ee84699c6958461d6a5c2a03c2bf9f9716d701877be2cc343"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/1m_hybrid/student.pt",
+      "original_bytes": 215077,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 229888,
+      "sha256": "6b03e09e6d9e8626e92291dbb93c5c303f898f12d27f8279337a98d948a4d4bb",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/1m_hybrid/student.pt",
+      "confirmed_sha256": "5168f35ebfcadfea54e22df806a27dc4719b08e0a24f36bb0a276c0affb953ed"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/1m/student.pt",
+      "original_bytes": 207232,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 229888,
+      "sha256": "ecb295747c0bc526e61b5b1c1faebcf1f76d220c7370f21318771a10faf59648",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/1m/student.pt",
+      "confirmed_sha256": "91ecd5247b9ec84113ee0f3953e84ab510f12d3a9340717e3d92806094d78655"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/100m/student.pt",
+      "original_bytes": 13558262,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 13585920,
+      "sha256": "a3819950ba81a401d8f060436c10e1bd056a1fc132d6febc48fbfcbeedee4da5",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/100m/student.pt",
+      "confirmed_sha256": "bedae27bdc2fc4acc86443fb5eef40b52ebaca09f1b09742a98ea0251dd96f23"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/10k/student.pt",
+      "original_bytes": 8549,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 8704,
+      "sha256": "d73dfa7089d27bfe954e0240b0ac207af30b0bd076de71efb795007bfac19bb0",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/10k/student.pt",
+      "confirmed_sha256": "6482f046f9757d592c6a24fff2c110463cbe921f34f65a527c172c2db8cdeb0b"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/100m_hybrid/student.pt",
+      "original_bytes": 13574529,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 13602304,
+      "sha256": "ffcfb35bab596470cafdffe50a6d37683fc03c0f72a598766bea4955df57f046",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/100m_hybrid/student.pt",
+      "confirmed_sha256": "987306120d478f75f7389ca53b2f2b28ad0b2161645f3e23c65fd70793d97f33"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/1k/student.pt",
+      "original_bytes": 6621,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 8704,
+      "sha256": "34aff8edf6563ced4cd4b055efab2d80711a3958326e750be932466b0596c37f",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/1k/student.pt",
+      "confirmed_sha256": "6fe0325066e116a521700ee41c527c4a5995e3a65fff59020bcd0cb257efe045"
+    },
+    {
+      "action": "deduplicated_identical_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/teacher/frame_student.pt",
+      "original_bytes": 905779,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 933376,
+      "sha256": "92d458e1a8ca183811cc8333b39b6a2adec4fc20f9d7ddbc84106e58aeff156a",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/teacher/frame_student.pt",
+      "confirmed_sha256": "92d458e1a8ca183811cc8333b39b6a2adec4fc20f9d7ddbc84106e58aeff156a"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/teacher/state_student.pt",
+      "original_bytes": 72193321,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 72191488,
+      "sha256": "82036fe720683422f3c9e1f56e8c7b933d6322687e4f37b7655f3fb585729f77",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/teacher/state_student.pt",
+      "confirmed_sha256": "58b0b4a4a633fcaa02218f436385e9e5cc93b7a5311f0df80188c107476988d5"
+    },
+    {
+      "action": "removed_superseded_initial_weights",
+      "path": "checkpoints/lr-sweep-20261115-200326/selected/100k/student.pt",
+      "original_bytes": 26230,
+      "retained_bytes": 0,
+      "allocated_bytes_freed": 33280,
+      "sha256": "cec4c94310566deefbda1335ba7b9d251e7091e2b17147573e3c10c8dd7db76a",
+      "confirmed_checkpoint_retained": "checkpoints/lr-sweep-20261115-200326/confirmation/selected/100k/student.pt",
+      "confirmed_sha256": "05d9eeac0abebd5f5f6d94846ef7cf6d3b842e487230c206734c7f91aa5a11ab"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/history.jsonl",
+      "archive": "checkpoints/lr-sweep-20261115-200326/history.jsonl.gz",
+      "original_bytes": 185007,
+      "retained_bytes": 24660,
+      "allocated_bytes_freed": 65536,
+      "sha256": "1a24067747d2b38e85038755b94621628bdb2cd2f0d96fa68dd054e2fb4514a9"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/independent_check.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/independent_check.log.gz",
+      "original_bytes": 8436,
+      "retained_bytes": 2293,
+      "allocated_bytes_freed": 8192,
+      "sha256": "52e53c5d27320eeac5c6f5ff9d034faeefd6185a292918ae673f4c319887bc08"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation.log.gz",
+      "original_bytes": 1119100,
+      "retained_bytes": 157506,
+      "allocated_bytes_freed": 441856,
+      "sha256": "3bddb8c74b3129e053d757ca411add1929d8a38f23cf301a477636bcf178db12"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/history.jsonl",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/history.jsonl.gz",
+      "original_bytes": 1113446,
+      "retained_bytes": 155149,
+      "allocated_bytes_freed": 433664,
+      "sha256": "7111e1e8375545a5695fc93e2003ebf56a6201eeafae8e1a2ec1e4ba498a1927"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/run-v8c2zu5a.wandb",
+      "archive": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/run-v8c2zu5a.wandb.gz",
+      "original_bytes": 864140,
+      "retained_bytes": 130693,
+      "allocated_bytes_freed": 245760,
+      "sha256": "e55a1ca024dd0f06a693e3a2536030afcf35885de2b71163dff7331ffc78e021"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/files/output.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/files/output.log.gz",
+      "original_bytes": 186005,
+      "retained_bytes": 25460,
+      "allocated_bytes_freed": 65536,
+      "sha256": "95cdab8b74350cb3531018451f3594f3cf8d0c16873f4bf0d4748880ef0e3a3d"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/logs/debug-internal.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/logs/debug-internal.log.gz",
+      "original_bytes": 25310,
+      "retained_bytes": 2798,
+      "allocated_bytes_freed": 16384,
+      "sha256": "0a7ac8cdd8bc30a309799c68095637993f404c88c0884bef1b458ce99fbb81b1"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/logs/debug.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/wandb/run-20261115_200330-v8c2zu5a/logs/debug.log.gz",
+      "original_bytes": 4236,
+      "retained_bytes": 1486,
+      "allocated_bytes_freed": 16384,
+      "sha256": "566f3c2122c0be499c4bf3fa3de5d56565114ae218b959a035c1a8a0f24524b9"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/run-4c2r4h53.wandb",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/run-4c2r4h53.wandb.gz",
+      "original_bytes": 37382,
+      "retained_bytes": 10012,
+      "allocated_bytes_freed": 16384,
+      "sha256": "824a4b02300454686e11c73be69b8241de849611916e33457f7e38d65d13eb11"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/run-xoa55tlu.wandb",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/run-xoa55tlu.wandb.gz",
+      "original_bytes": 6400797,
+      "retained_bytes": 619193,
+      "allocated_bytes_freed": 1620480,
+      "sha256": "194ddff0c009630eb373f1f1d10a030a9157f8e883269eee33a8c17493d2b74d"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/files/output.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/files/output.log.gz",
+      "original_bytes": 1114346,
+      "retained_bytes": 155846,
+      "allocated_bytes_freed": 433664,
+      "sha256": "df4b7a954620c1b81998babbc22d9109e42853b57d0896c454768919c29a8b54"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/logs/debug.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/logs/debug.log.gz",
+      "original_bytes": 4761,
+      "retained_bytes": 1657,
+      "allocated_bytes_freed": 8192,
+      "sha256": "7949f419dd0ee20023e0d43626e767b9737559294683f3d74c2134d95b3a1f60"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/logs/debug-internal.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_202139-xoa55tlu/logs/debug-internal.log.gz",
+      "original_bytes": 48747,
+      "retained_bytes": 4903,
+      "allocated_bytes_freed": 16384,
+      "sha256": "76ae505d0e2ab307b9329233c3a6f1e239b5c033ba504682874cfe9d7d3f869f"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/files/output.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/files/output.log.gz",
+      "original_bytes": 5373,
+      "retained_bytes": 1421,
+      "allocated_bytes_freed": 8192,
+      "sha256": "e97dd804a28661790b63c77c8d3cdbc21e94cae5c853c2dc387923ae3c65aa24"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/logs/debug.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/logs/debug.log.gz",
+      "original_bytes": 2950,
+      "retained_bytes": 891,
+      "allocated_bytes_freed": 8192,
+      "sha256": "7048772aec9b5ddc3d04f4d5d0d12de81e402e69d7ca5dc9e20d50cd2a473cba"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/logs/debug-internal.log",
+      "archive": "checkpoints/lr-sweep-20261115-200326/confirmation/wandb/run-20261115_205716-4c2r4h53/logs/debug-internal.log.gz",
+      "original_bytes": 2217,
+      "retained_bytes": 562,
+      "allocated_bytes_freed": 8192,
+      "sha256": "c9919323aa00e24ec3c4255f10142c9016dae13da978604d0bab684c817269ce"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/run.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/run.log.gz",
+      "original_bytes": 5824573,
+      "retained_bytes": 828046,
+      "allocated_bytes_freed": 2201600,
+      "sha256": "4958d09b73e827a49d2a53bd867c34223225c763fb0b30596aee3c06d28b9bbb"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/history.jsonl",
+      "archive": "checkpoints/lr-windows-20261115-211044/history.jsonl.gz",
+      "original_bytes": 5695988,
+      "retained_bytes": 805349,
+      "allocated_bytes_freed": 2152448,
+      "sha256": "4c4a28ac95e7f1f481366f9274f8088617477837fa03eb4464463401dce1afba"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/run-86bc54pq.wandb",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/run-86bc54pq.wandb.gz",
+      "original_bytes": 29786112,
+      "retained_bytes": 2636655,
+      "allocated_bytes_freed": 7447552,
+      "sha256": "55e6bfe696cf0eff72fd700cb136ffc7eafc73f109479312b30450deb0788f3a"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/run-86bc54pq.wandb",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/run-86bc54pq.wandb.gz",
+      "original_bytes": 13286,
+      "retained_bytes": 5601,
+      "allocated_bytes_freed": 16384,
+      "sha256": "74c9fd98dfface67b31faa52d3eb7f453a3afd6d0c80c1273880655129c12abd"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/run-86bc54pq.wandb",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/run-86bc54pq.wandb.gz",
+      "original_bytes": 2309843,
+      "retained_bytes": 217410,
+      "allocated_bytes_freed": 589312,
+      "sha256": "aa44be871b5b22d0512af64170b923593b43251e4fe6a51c3c2b88c0bbd28a5f"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/logs/debug-internal.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/logs/debug-internal.log.gz",
+      "original_bytes": 8576,
+      "retained_bytes": 1211,
+      "allocated_bytes_freed": 8192,
+      "sha256": "f373d529b43dfcfe2e32d160c33ff188952e91bfcd36328b55b4bbbb55ce9bbe"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/logs/debug.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/logs/debug.log.gz",
+      "original_bytes": 4426,
+      "retained_bytes": 1615,
+      "allocated_bytes_freed": 16384,
+      "sha256": "1d6c34c19b46fcf65d2782ecfe59017141b1eed4589a3bee363a8267a9fdf5b1"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/files/output.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211339-86bc54pq/files/output.log.gz",
+      "original_bytes": 422509,
+      "retained_bytes": 60485,
+      "allocated_bytes_freed": 180224,
+      "sha256": "148d9ff76ddfb45760a8b3524162e523efd4f48bc62fffedffde32c4b5d37293"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/logs/debug-internal.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/logs/debug-internal.log.gz",
+      "original_bytes": 2403,
+      "retained_bytes": 557,
+      "allocated_bytes_freed": 8192,
+      "sha256": "ac48a5a0f86a6e1a51e9ab8a9a561784414d41a4fefd9cc1b4758ebcc145593f"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/logs/debug.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/logs/debug.log.gz",
+      "original_bytes": 4337,
+      "retained_bytes": 1553,
+      "allocated_bytes_freed": 16384,
+      "sha256": "1d9013a0cd53c3d656918da4d5d236c39c460b29be571553ef544f3b6bf17177"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/files/output.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_211100-86bc54pq/files/output.log.gz",
+      "original_bytes": 673,
+      "retained_bytes": 306,
+      "allocated_bytes_freed": 8192,
+      "sha256": "10776d7efe1519491ee18c412bba168f27a679698d78c3e203252d167a742ef3"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/logs/debug-internal.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/logs/debug-internal.log.gz",
+      "original_bytes": 70394,
+      "retained_bytes": 7261,
+      "allocated_bytes_freed": 16384,
+      "sha256": "abe910fe5e9fb8008dba456ba50b679a33a9db4fedce9bf8192bfeb0bb6f51a2"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/logs/debug.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/logs/debug.log.gz",
+      "original_bytes": 4023,
+      "retained_bytes": 1517,
+      "allocated_bytes_freed": 8192,
+      "sha256": "f9802b26f2d62b20ec8d79a714ab6312c73ac81ce175e91d47c3ff8939413650"
+    },
+    {
+      "action": "gzip_verified",
+      "source": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/files/output.log",
+      "archive": "checkpoints/lr-windows-20261115-211044/wandb/run-20261115_212019-86bc54pq/files/output.log.gz",
+      "original_bytes": 5387523,
+      "retained_bytes": 764704,
+      "allocated_bytes_freed": 2045952,
+      "sha256": "6696d5f49425a93453102b26440e207fa5e50ed8d96d0085a98cf587223e20ab"
+    }
+  ],
+  "logical_bytes_freed": 154871488,
+  "allocated_bytes_freed_observed": 119116288,
+  "tmp_at_recovery": "Already cleared; 32 GiB free. No temporary trial weights/recordings remained to recover.",
+  "confirmed_models_preserved": "checkpoints/lr-sweep-20261115-200326/confirmation/selected"
+}

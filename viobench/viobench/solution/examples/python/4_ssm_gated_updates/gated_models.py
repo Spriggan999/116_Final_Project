@@ -20,6 +20,8 @@ class GatedModel(nn.Module):
     def __init__(self, settings):
         super().__init__()
         self.settings = dict(settings)
+        self.architecture = settings.get('architecture', 'legacy')
+        if self.architecture not in ('legacy','persistent_visual_v2'):raise ValueError('Unknown gated architecture')
         h, e = settings['hidden'], settings['embedding_dim']
         self.vision = VisualFeatures(True, 8, e)
         self.vision.feature_dropout = 0.
@@ -34,6 +36,13 @@ class GatedModel(nn.Module):
         if self.innovation is not None:
             nn.init.zeros_(self.innovation[-1].weight)
             nn.init.zeros_(self.innovation[-1].bias)
+
+        if self.architecture == 'persistent_visual_v2':
+            self.visual_gru = nn.GRUCell(3*e+1, h)
+            self.velocity_update = nn.Linear(h, 3)
+            self.orientation_update = nn.Linear(h, 3)
+            for head in (self.velocity_update, self.orientation_update):
+                nn.init.zeros_(head.weight);nn.init.zeros_(head.bias)
 
     def train(self, mode=True):
         super().train(mode)
@@ -74,6 +83,8 @@ class GatedModel(nn.Module):
             return self._forward(images, imu, dt, gravity, ticks, observed)
 
     def _forward(self, images, imu, dt, gravity, ticks, observed):
+        if self.architecture == "persistent_visual_v2":
+            return self._forward_persistent(images, imu, dt, gravity, ticks, observed)
         b, t, _ = imu.shape
         k = images.shape[1]
         e = self.settings['embedding_dim']
@@ -145,6 +156,8 @@ class GatedModel(nn.Module):
     @amp_disabled()
     def stream_step(self, image, imu, dt, gravity, state):
         """One tick; image is [1,3,H,W] or None. No state reset at camera gaps."""
+        if self.architecture == "persistent_visual_v2":
+            return self._persistent_step(image, imu, dt, gravity, state)
         s = dict(state)
         hidden, s['h'] = self.gru(imu[:, None]/10, s['h'])
         hidden = hidden[:, 0]
@@ -177,3 +190,122 @@ class GatedModel(nn.Module):
         s['initial'] = False
         return dict(pos=s['pos'], vel=s['vel'], rot=s['rot'], omega=omega,
                     corrections=correction), s
+
+    def _visual_segment(self, imu, hidden, visual, anchor, previous, mean, elapsed, span, capture, bootstrap):
+        """Neural work between captures; safe to checkpoint as one small segment."""
+        with neural_autocast(imu):
+            sequence, hidden = self.gru(imu/10, hidden)
+            # IMU-only state at this tick, before the current capture is
+            # assimilated; the auxiliary JEPA head must not see its own target.
+            imu_hidden = hidden[0]
+            predicted = self.predict(previous, anchor, mean, elapsed, span)
+            vu = imu.new_zeros(len(imu), 3)
+            ru = vu.clone()
+            innovation = imu.new_zeros(len(imu), imu.shape[1], 9)
+            sparse = imu.new_zeros(len(imu), imu.shape[1], visual.shape[-1])
+            if capture:
+                sparse = torch.cat((sparse[:, :-1], visual[:, None]), 1)
+                if not bootstrap:
+                    features = torch.cat((visual, anchor, visual-anchor, elapsed), -1)
+                    assimilated = self.visual_gru(features, hidden[0])
+                    hidden = assimilated[None]
+                    sequence = torch.cat((sequence[:, :-1], assimilated[:, None]), 1)
+                    vu = self.settings.get('velocity_update_bound', .5)*torch.tanh(self.velocity_update(assimilated))
+                    ru = self.settings.get('orientation_update_bound', .02)*torch.tanh(self.orientation_update(assimilated))
+                    if self.innovation is not None:
+                        residual = self.innovation(torch.cat((assimilated, visual-predicted), -1))
+                        innovation = torch.cat((innovation[:, :-1], residual[:, None]), 1)
+            raw = self.fusion(torch.cat((sequence, sparse), -1))+innovation
+            corr = .25*torch.tanh(raw)
+            aux = self.auxiliary(imu_hidden) if self.auxiliary is not None else visual*0
+        return tuple(v.float() for v in (corr, hidden, predicted, aux, vu, ru, innovation))
+
+    def _forward_persistent(self, images, imu, dt, gravity, ticks, observed):
+        # Different capture grids are valid; process each grid separately.
+        if len(imu)>1 and not torch.equal(ticks, ticks[:1].expand_as(ticks)):
+            rows=[self._forward_persistent(images[i:i+1],imu[i:i+1],dt[i:i+1],gravity[i:i+1],
+                                          ticks[i:i+1],observed[i:i+1]) for i in range(len(imu))]
+            return {key: None if rows[0][key] is None else torch.cat([r[key] for r in rows],0) for key in rows[0]}
+        from torch.utils.checkpoint import checkpoint
+        from functools import partial
+        b,t,_=imu.shape;k=images.shape[1];h=self.settings['hidden'];e=self.settings['embedding_dim']
+        capture_ticks=ticks[0].tolist()
+        if not capture_ticks or capture_ticks[0]!=0:raise ValueError('Persistent windows require an initial capture')
+        online=self.encode_captures(self.vision, images).reshape(b,k,e).float()
+        hidden=imu.new_zeros(1,b,h);pos=imu.new_zeros(b,3);vel=pos.clone()
+        rotation=torch.eye(3,device=imu.device).expand(b,3,3)
+        pieces={key:[] for key in ('pos','vel','rot','omega','corrections','innovation_update',
+                                   'visual_velocity_update','visual_orientation_update')}
+        predicted=[];auxiliary=[];start=0;previous_tick=0;previous_span=imu.new_zeros(b,1)
+        anchor=online[:,0];previous=anchor
+        boundaries=[(tick,slot) for slot,tick in enumerate(capture_ticks)]
+        if capture_ticks[-1]<t-1:boundaries.append((t-1,None))
+        for end,slot in boundaries:
+            capture=slot is not None;bootstrap=start==0
+            visual=online[:,slot] if capture else anchor*0
+            elapsed=(end-previous_tick)*dt[:,None]
+            mean=imu[:,previous_tick+1:end+1].mean(1)/10 if end>previous_tick else imu[:,0]*0
+            operation=partial(self._visual_segment,capture=capture,bootstrap=bootstrap)
+            arguments=(imu[:,start:end+1],hidden,visual,anchor,previous,mean,elapsed,previous_span)
+            values=checkpoint(operation,*arguments,use_reentrant=False) if self.training and torch.is_grad_enabled() else operation(*arguments)
+            corr,hidden,pred,aux,vu,ru,innovation=values
+            if bootstrap:
+                pp=pos[:,None];vv=vel[:,None];rr=rotation[:,None];ww=imu.new_zeros(b,1,3)
+            else:
+                # The relative integrator skips its initialized sample.
+                segment_imu=torch.cat((imu[:,start:start+1],imu[:,start:end+1]),1)
+                segment_corr=torch.cat((corr[:,:1]*0,corr),1)
+                segment_corr=torch.cat((segment_corr[...,:6],(rotation[:,None].transpose(-1,-2)@segment_corr[...,6:,None]).squeeze(-1)), -1)
+                local_gravity=(rotation.transpose(-1,-2)@gravity[...,None]).squeeze(-1)
+                local=integrate_corrections(segment_corr,segment_imu,dt,local_gravity,parallel=imu.is_cuda)
+                times=torch.arange(1,end-start+2,device=imu.device)[None,:,None]*dt[:,None,None]
+                pp=pos[:,None]+vel[:,None]*times+(rotation[:,None]@local['pos'][:,1:,...,None]).squeeze(-1)
+                vv=vel[:,None]+(rotation[:,None]@local['vel'][:,1:,...,None]).squeeze(-1)
+                rr=rotation[:,None]@local['rot'][:,1:]
+                ww=local['omega'][:,1:]
+                if capture:
+                    vv=torch.cat((vv[:,:-1],(vv[:,-1]+vu)[:,None]),1)
+                    rr=torch.cat((rr[:,:-1],(rr[:,-1]@so3_exp(ru))[:,None]),1)
+            for key,value in (('pos',pp),('vel',vv),('rot',rr),('omega',ww),('corrections',corr),('innovation_update',innovation)):
+                pieces[key].append(value)
+            for key,value in (('visual_velocity_update',vu),('visual_orientation_update',ru)):
+                zeros=imu.new_zeros(b,end-start+1,3)
+                pieces[key].append(torch.cat((zeros[:,:-1],value[:,None]),1))
+            pos,vel,rotation=pp[:,-1],vv[:,-1],rr[:,-1]
+            if capture:
+                predicted.append(pred[:,None]);auxiliary.append(aux[:,None])
+                previous,anchor=anchor,visual
+                previous_span=elapsed;previous_tick=end
+            start=end+1
+        result={key:torch.cat(value,1) for key,value in pieces.items()}
+        valid=torch.ones(b,k,device=imu.device,dtype=torch.bool);valid[:,0]=False
+        sparse=online.new_zeros(b,t,e).scatter(1,ticks[...,None].expand(-1,-1,e),online)
+        result.update(online=online,predicted=torch.cat(predicted,1),
+                      auxiliary=torch.cat(auxiliary,1) if self.auxiliary is not None else None,
+                      valid=valid,sparse_visual=sparse)
+        return result
+
+    def _persistent_step(self, image, imu, dt, gravity, state):
+        s=dict(state);bootstrap=s['initial'];capture=image is not None
+        if not bootstrap:
+            s['imu_sum']=s['imu_sum']+imu;s['count']+=1;s['age']+=float(dt)
+        visual=self.vision(image).float() if capture else s['anchor']*0
+        values=self._visual_segment(imu[:,None],s['h'],visual,s['anchor'],s['previous'],
+            s['imu_sum']/max(1,s['count'])/10,imu.new_tensor([[s['age']]]),imu.new_tensor([[s['span']]]),
+            capture,bootstrap)
+        corr,s['h'],_,_,vu,ru,_=values;corr=corr[:,0]
+        omega=imu[:,3:]+corr[:,:3]
+        if not bootstrap:
+            acceleration=(s['rot']@(imu[:,:3]+corr[:,3:6])[...,None]).squeeze(-1)+gravity+corr[:,6:]
+            s['pos']=s['pos']+s['vel']*dt+.5*acceleration*dt**2
+            s['vel']=s['vel']+acceleration*dt
+            s['rot']=s['rot']@so3_exp(omega*dt)
+            if capture:s['vel']=s['vel']+vu;s['rot']=s['rot']@so3_exp(ru)
+        else:omega=omega*0
+        if capture:
+            # The bootstrap capture is both anchor and previous, as in batching.
+            s['previous'],s['anchor']=(visual if bootstrap else s['anchor']),visual
+            s['span'],s['age'],s['count']=s['age'],0.,0
+            s['imu_sum']=s['imu_sum']*0;s['captures']+=1
+        s['initial']=False
+        return dict(pos=s['pos'],vel=s['vel'],rot=s['rot'],omega=omega,corrections=corr),s
