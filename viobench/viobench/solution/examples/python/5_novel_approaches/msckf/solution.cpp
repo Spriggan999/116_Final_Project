@@ -279,6 +279,45 @@ typedef double upd_t;
 #ifndef LP_BASE
 #define LP_BASE 1e9              // m: use rotation-only rows only if the clone baseline over the track is below this
 #endif
+#ifndef DP
+#define DP 0                     // 1: weak scale prior: median depth of freshly triangulated features ~ DP_Z0 (indoor rooms)
+#endif
+#ifndef DP_Z0
+#define DP_Z0 3.0                // m, typical median feature depth
+#endif
+#ifndef DP_SIG
+#define DP_SIG 0.5               // relative (log) spread of the median depth between rooms
+#endif
+#ifndef DP_EVERY
+#define DP_EVERY 10              // frames between scale rows
+#endif
+#ifndef DP_MIN
+#define DP_MIN 6                 // triangulated features needed since the last row
+#endif
+#ifndef DP_VMIN
+#define DP_VMIN 0.1              // m/s: no row below this speed (direction of v undefined)
+#endif
+#ifndef DP_VMAX
+#define DP_VMAX 100.0            // m/s: no row above this speed (IMU scale is good)
+#endif
+#ifndef DP_RUN
+#define DP_RUN 100.0             // m/s: rows only while the flight's running speed (sqrt of v2_avg) is below this
+#endif
+#ifndef DP_TAU
+#define DP_TAU 0.0               // >0: the gate uses its own running speed (time constant DP_TAU s, start DP_V0) instead of v2_avg
+#endif
+#ifndef DP_V0
+#define DP_V0 0.0
+#endif
+#ifndef ZV_ACC
+#define ZV_ACC 0.0               // m/s: >0 vetoes the zero-velocity update when the IMU-only velocity change over ZV_ACC_N frames exceeds this
+#endif
+#ifndef ZV_ACC_N
+#define ZV_ACC_N 20
+#endif
+#ifndef LP_ZV
+#define LP_ZV 0                  // >0: rotation-only rows only within LP_ZV frames of a zero-velocity update (vision says still)
+#endif
 #ifndef LP_DEPTH
 #define LP_DEPTH 10.0
 #endif
@@ -484,7 +523,9 @@ static long st_mh_upd = 0;
 
 static int frame_rows = 0;
 static double v2_avg = 0.25;
-static int frame_tri_fail = 0, zupt_count = 0; static bool tri_par = false, moved = false; static int move_frames = 0;
+static double zacc_ring[64][3]; static int zacc_i = 0;
+static float dp_depth[256]; static int dp_n = 0; static double dp_v2 = DP_V0 * DP_V0;
+static int frame_tri_fail = 0, zupt_count = 0, last_zupt_frame = -100000; static bool tri_par = false, moved = false; static int move_frames = 0;
 static int ring_c[RESET_WIN], ring_s[RESET_WIN], n_resets = 0;
 static long st_cells = 0, st_tracks = 0;
 static long st_cand = 0, st_tri = 0, st_chi = 0, st_ok = 0, st_par = 0, st_rep = 0;
@@ -1118,6 +1159,7 @@ static int feature_rows(const Feat& f0) {
             const Clone& C0 = clones[ck[0]]; const Clone& C1 = clones[ck[m - 1]];
             const double bx = C1.p[0] - C0.p[0], by = C1.p[1] - C0.p[1], bz = C1.p[2] - C0.p[2];
             if (bx * bx + by * by + bz * bz > LP_BASE * LP_BASE) return 0;
+            if (LP_ZV > 0 && frame_no - last_zupt_frame > LP_ZV) return 0;
         }
         // too little parallax to triangulate: place the point far away along its first bearing; after the null-space
         // projection the rows mainly constrain the relative rotation of the clones (gyro drift in slow flight)
@@ -1125,6 +1167,11 @@ static int feature_rows(const Feat& f0) {
         double b0[3] = {f.obs[0].u * LP_DEPTH, f.obs[0].v * LP_DEPTH, LP_DEPTH}, w[3]; mv(Ra, b0, w);
         for (int i = 0; i < 3; i++) pf[i] = pa[i] + w[i];
         far = true;
+    }
+    if (DP && !far && dp_n < 256) {   // depth of the point in its anchor camera (for the scale prior)
+        M3 Ra; double pa[3]; cam_pose(ck[0], Ra, pa);
+        double d[3] = {pf[0] - pa[0], pf[1] - pa[1], pf[2] - pa[2]}, q[3]; mtv(Ra, d, q);
+        if (q[2] > 0) dp_depth[dp_n++] = (float)q[2];
     }
     const int rr = 2 * m;
     double Hx[2 * (N_CLONES + 1)][6 * (N_CLONES + 1)]; double Hf[2 * (N_CLONES + 1)][3]; double res[2 * (N_CLONES + 1)];
@@ -1510,7 +1557,7 @@ VIOBENCH_EXPORT(init) int32_t init(const char* cfg, uint32_t n) {
     for (int i = 0; i < 3; i++) { for (int j = 0; j < 3; j++) Rci.m[3 * i + j] = T[4 * i + j]; tci[i] = T[4 * i + 3]; }
     std::memset(P, 0, sizeof P); std::memset(feats, 0, sizeof feats); std::memset(cool, 0, sizeof cool);
     for (int q = 0; q < (SLAM_N > 0 ? SLAM_N : 1); q++) { lms[q].active = false; lms[q].fidx = -1; }
-    n_state = CB; n_clones = 0; frame_no = 0; started = false; npend = 0; n_splats = 0; last_reset_frame = -100000; mh_C = mh_S = mh_W = 0; mh_ref_ok = mh_basis = false; imu_have = false; v2_avg = 0.25; n_hitf = 0; fej_ok = false; depth_avg = 2.5; moved = false; move_frames = 0;
+    n_state = CB; n_clones = 0; frame_no = 0; started = false; npend = 0; n_splats = 0; last_reset_frame = -100000; mh_C = mh_S = mh_W = 0; mh_ref_ok = mh_basis = false; imu_have = false; v2_avg = 0.25; n_hitf = 0; fej_ok = false; depth_avg = 2.5; dp_v2 = DP_V0 * DP_V0; dp_n = 0; zacc_i = 0; moved = false; move_frames = 0;
     return VIOBENCH_STATUS_OK;
 }
 
@@ -1666,7 +1713,9 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     }
     M3 Rold = Rwi;
     const double t_before = t_last, p_old[3] = {pw[0], pw[1], pw[2]};
-    propagate(imu, nimu);
+    { const double v0[3] = {vw[0], vw[1], vw[2]};
+      propagate(imu, nimu);
+      if (ZV_ACC > 0) { for (int i = 0; i < 3; i++) zacc_ring[zacc_i % ZV_ACC_N][i] = vw[i] - v0[i]; zacc_i++; } }
     if (LK_TPRED) {   // camera displacement over this frame, in the new camera's axes
         const double dw[3] = {pw[0] - p_old[0], pw[1] - p_old[1], pw[2] - p_old[2]}; double di[3]; mtv(Rwi, dw, di); mv(Rci, di, tpred_c);
     }
@@ -1783,11 +1832,16 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
                 if (ZV_START_ONLY == 2) { if (wd > ZV_MOVE_WIN) move_frames++; else move_frames = 0; if (move_frames >= 5) moved = true; }
             }
         }
-        if (!moved && still && wn < ZV_GYR) {
+        bool acc_veto = false;
+        if (ZV_ACC > 0 && zacc_i >= ZV_ACC_N) {
+            double sv[3] = {0, 0, 0}; for (int k = 0; k < ZV_ACC_N; k++) for (int i = 0; i < 3; i++) sv[i] += zacc_ring[k][i];
+            acc_veto = sv[0] * sv[0] + sv[1] * sv[1] + sv[2] * sv[2] > ZV_ACC * ZV_ACC;
+        }
+        if (!moved && still && wn < ZV_GYR && !acc_veto) {
             nrows = 0;
             for (int i = 0; i < 3; i++) add_row1(VE + i, -vw[i], zsig * zsig);
             ekf_update();
-            zupt_count++;
+            zupt_count++; last_zupt_frame = frame_no;
         }
     }
     if (SCHED ? sched_used + SC_CELL * (SCHED >= 2 ? sched_need : 0) + SC_SPLAT <= SCHED_B : frame_rows <= SPL_SKIP_ROWS) { splat_step(); if (SCHED) sched_used += SC_SPLAT; }
@@ -1816,6 +1870,23 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         if (VP_ADAPT) { sig = VP_K * std::sqrt(v2_avg); if (sig < VP_MIN) sig = VP_MIN; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
         for (int i = 0; i < 3; i++) add_row1(VE + i, -vw[i], sig * sig);
         ekf_update();
+    }
+    if (DP && DP_TAU > 0) dp_v2 += (vw[0] * vw[0] + vw[1] * vw[1] + vw[2] * vw[2] - dp_v2) * (frame_dt / (DP_TAU > 0 ? DP_TAU : 1.0));
+    if (DP && frame_no % DP_EVERY == 0) {
+        const double sp = std::sqrt(vw[0] * vw[0] + vw[1] * vw[1] + vw[2] * vw[2]);
+        if (dp_n >= DP_MIN && sp > DP_VMIN && sp < DP_VMAX && (DP_TAU > 0 ? dp_v2 : v2_avg) < DP_RUN * DP_RUN) {
+            for (int i = 1; i < dp_n; i++) { float v = dp_depth[i]; int j = i - 1; while (j >= 0 && dp_depth[j] > v) { dp_depth[j + 1] = dp_depth[j]; j--; } dp_depth[j + 1] = v; }
+            const double D = dp_depth[dp_n / 2];
+#ifndef __wasm__
+            if (std::getenv("MSCKF_DP")) std::fprintf(stderr, "DP f %d D %.3f n %d sp %.3f\n", frame_no, D, dp_n, sp);
+#endif
+            // velocity scale implied by the depth prior: v_true ~ v * Z0 / D, relative spread DP_SIG
+            nrows = 0;
+            rnnz[0] = 3; for (int i = 0; i < 3; i++) { ridx[0][i] = VE + i; rval[0][i] = vw[i] / sp; }
+            rs[0] = sp * (DP_Z0 / D - 1.0); Rd[0] = (sp * DP_SIG) * (sp * DP_SIG); nrows = 1;
+            ekf_update();
+        }
+        dp_n = 0;
     }
     output(out);
 #ifndef __wasm__

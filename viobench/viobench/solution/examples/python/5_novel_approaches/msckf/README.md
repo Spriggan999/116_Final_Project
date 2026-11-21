@@ -136,3 +136,18 @@ Residuals stay sub-pixel and pass the chi-square gate, so the damage is not outl
 position sigma, are linearized at poor positions, and long KLT tracks drift slowly in a correlated way that the
 filter reads as precise information. In 0.55 s windows indoors, features rarely live long enough to add anything
 the MSCKF rows do not already give.
+
+## Where the slow-flight error comes from (diagnosis, router_lite2, 20 normal-dev flights)
+
+- Unaligned ATE 1.16 m, 0.70 m after a rigid alignment, scale right on average (Sim(3) scale 0.99).
+- Heading drifts about 13 degrees in 60 s (tilt under 1.5). Cause: the gyro bias is not observed during the start
+  hover (no triangulations, so no vision rows), and the first motion pushes the yaw bias to a wrong value. Rotation-only
+  rows during hover (`LOWPAR=1 LP_BASE=0.01-0.02`) fix the bias and halve the heading error, but removing heading
+  error from the output steps after the fact does not lower ATE: the score only sees position, and the position steps
+  do not inherit the attitude's heading error.
+- The position error is mostly scale: all three estimators (MSCKF, learned_lin, router) cover only about 66% of the
+  true distance during takeoff (3-10 s), and the MSCKF's cruise speed varies from 0.63x to 1.5x of the truth between
+  flights. The depth prior (`DP=1`, see `../router/README.md`) addresses the cruise part.
+- The simulator's IMU: gyro white noise 0.07 rad/s per sample, gyro bias turn-on 0.02 rad/s and random walk 6e-4;
+  accelerometer 0.28 m/s^2, bias turn-on 0.2 and random walk 1e-3; no aerodynamic drag, no disturbance forces.
+  Gyro and camera are aligned to 0.1 degree, with no time offset.

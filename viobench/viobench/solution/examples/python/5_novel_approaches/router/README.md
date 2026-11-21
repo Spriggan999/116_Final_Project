@@ -203,3 +203,66 @@ Measured paired on 187 selection flights against router_lite2; max fuel from the
 
 Every way of delaying work, whether new features, update rows or shorter tracks, costs accuracy roughly in
 proportion to how often it delays. The few-percent fuel savings never pay for that on the area score.
+
+## router_dp: router_lite2 plus a depth-based scale prior on slow flights (`../wasm/router_dp.wasm`)
+
+Build:
+
+```bash
+./build_wasm.sh OUT.wasm -DPR=3 -DMAX_ROWS=20 -DDET_SPARSE=1 -DSPL_SKIP_ROWS=16 -DVMAX=6.0 \
+    -DVP_ADAPT=1 -DVP_K=1.2 -DVP_MIN=0.8 -DVPRIOR_SIG=3.0 -DSPL_GROW=1 -DSPL_SMAX_LATE=2.0 -DRT_WMAX=0.95 \
+    -DDP=1 -DDP_Z0=1.8 -DDP_SIG=0.6 -DDP_RUN=0.40
+```
+
+**Why.** On slow flights most of the error is scale, not heading. In slow cruise the accelerations are too small for
+the IMU to fix the MSCKF's metric scale: its cruise speed is right on average but ranges from 0.63x to 1.5x of the
+truth across flights. Indoor rooms have a consistent depth, so the depth of triangulated features carries scale
+information. The median true depth of freshly triangulated features is 1.8 m on the normal flights and 2.2 m on the
+agile ones; per flight it ranges from 1.2 to 2.9 m (window to window, log-sd about 0.4).
+
+**How.** Every 10 frames, the median anchor depth D of the features triangulated since the last row gives one EKF
+row on the speed along the current velocity: speed x 1.8 / D, with a relative sigma of 0.6. It needs at least 6
+triangulated features and a speed over 0.1 m/s. It is only applied while the flight's running speed (the 10 s mean
+the velocity prior already keeps) is below 0.40 m/s, so agile flights are unchanged. Ungated, the prior helps slow
+flights as much but hurts agile flights by +0.08 to +0.28 m: there the IMU already gives good scale.
+
+| Paired against router_lite2 | Flights | Difference (se) | Better on |
+|---|---:|---:|---:|
+| Selection (dev, training, normal-dev2, 3x-gyro-bias sets) | 132 | -0.045 m (0.029) | 41/132 (the rest unchanged) |
+| Selection, normal flights only | 68 | -0.130 / -0.069 m (normal-dev / normal-dev2) | 41/68 |
+| Neighbouring settings (sigma 0.5 / 0.8, depth 1.6 m, gate 0.45 m/s, every 5 frames) | 132 | -0.027 to -0.066 m | |
+| Test, scored once | 144 | -0.016 m (0.019), mean 0.804 m | 14/144 |
+| Test, normal held-out | 16 | -0.135 m (0.176) | 11/16 |
+
+Max fuel (sandbox, 48 episodes): 3.27M, the same as router_lite2. Sandbox ATE equals the host replay. On the area
+estimate it is about 2% better than router_lite2.
+
+### router_dp2: learned_lin blended up to 0.65 m/s (`../wasm/router_dp2.wasm`, add `-DRT_HI=0.65`)
+
+With the depth prior in place, blending in learned_lin over a wider speed range helps. The MSCKF weight still goes
+from 0.5 at 0.30 m/s, but now reaches 0.95 at 0.65 m/s instead of 0.45 m/s.
+
+| Upper threshold (paired against router_dp, 132 selection flights) | Difference (se) | Better on |
+|---|---:|---:|
+| 0.40 / 0.35 (lower thresholds 0.25 / 0.20) | +0.008 / +0.010 m | |
+| 0.50 / 0.55 | -0.014 / -0.023 m (0.006) | 46 / 59 |
+| **0.65** | **-0.034 m (0.010)** | **82** |
+| 0.80 | -0.024 m: agile flights +0.01 to +0.07 m | 66 |
+
+Test, scored once: 0.797 m, -0.007 m (se 0.006) against router_dp and -0.023 m (se 0.019) against router_lite2.
+Normal held-out 1.164 m (router_lite2 1.407), but the agile test sets are +0.01 to +0.03 m worse. Max fuel 3.27M.
+It leans more on learned_lin at medium speeds, so it is the riskier choice on flights unlike the local ones.
+
+Tried in the same round, not adopted:
+
+| Change | Result |
+|---|---|
+| IMU bias noise matched to the simulator (gyro bias walk 6e-4, accel walk 1e-3, accel turn-on 0.2) | +0.02 to +0.17 m |
+| Rotation-only rows for low-parallax tracks during hover (`LOWPAR`, `LP_BASE`, `LP_ZV`) | fixes the gyro-bias estimate at takeoff and halves heading error at 15-30 s, but ATE -0.02 to +0.10 m: heading error barely affects position |
+| Stricter or softer zero-velocity tests (`ZV_WIN` 1.0 / 1.2, `ZV_SOFT`, `ZW_MIN_SPAN` 10) | +0.02 to +0.09 m, although about 20 zero-velocity updates per slow flight fire at over 0.1 m/s |
+| Depth prior gated by its own running speed starting at 0 | hurts agile flights again (+0.04 to +0.32 m on agile sets) |
+| Router step cap at 3 / 4 / 5 m/s (`RT_VCAP`), or learned_lin's step when the MSCKF jumps (`RT_CAPLIN`) | +0.02 to +0.19 m: large MSCKF jumps are mostly corrections toward the truth |
+| Router slow-flight weight 0.4 / 0.6 / 0.7 with the depth prior | within 0.005 m |
+| Depth prior also below 0.1 m/s filter speed (`DP_VMIN` 0.03 / 0.05), or only above 0.15 | -0.002 to +0.04 m |
+| Veto the zero-velocity update when the IMU-only velocity change over 0.5-1 s is large (`ZV_ACC`) | +0.11 to +0.22 m: too noisy to tell takeoff from hover |
+| More clones (13, 15), 7 observations per track, 24 rows, 40 features, 9x9 patches | +0.09 to +0.37 m on selection |

@@ -34,6 +34,15 @@
 #ifndef RT_WMIN
 #define RT_WMIN 0.5
 #endif
+#ifndef RT_VCAP
+#define RT_VCAP 0.0    // m/s: >0 caps the output position step at this speed (an MSCKF update can teleport the position)
+#endif
+#ifndef RT_VCAPK
+#define RT_VCAPK 0.0   // the cap is at least RT_VCAPK x the running speed
+#endif
+#ifndef RT_CAPLIN
+#define RT_CAPLIN 0    // 1: when the MSCKF step is over the cap, use learned_lin's step instead (then cap)
+#endif
 extern "C" {
 int32_t msckf_init(const char*, uint32_t); int32_t msckf_step(double, const uint8_t*, const double*, int32_t, double*);
 int32_t msckf_frames_since_reset(void);
@@ -66,7 +75,15 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         const double wr = msckf_frames_since_reset() < RT_RESET_FR ? RT_WRESET : 1.0;   // just reset: lean on learned_lin
         w_last = w;
         const double wu = w < wr ? w : wr;
-        for (int i = 0; i < 3; i++) { pout[i] += RT_SHRINK * (wu * da[i] + (1 - wu) * db[i]); pa_prev[i] = a[i]; if (bok) pb_prev[i] = b[i]; }
+        double st[3], s2 = 0;
+        for (int i = 0; i < 3; i++) { st[i] = RT_SHRINK * (wu * da[i] + (1 - wu) * db[i]); s2 += st[i] * st[i]; }
+        if (RT_VCAP > 0 && dt > 1e-4) {
+            double cap = RT_VCAP; if (RT_VCAPK * vrun > cap) cap = RT_VCAPK * vrun;
+            cap *= dt;
+            if (RT_CAPLIN && bok && sa > cap * cap) { s2 = 0; for (int i = 0; i < 3; i++) { st[i] = db[i]; s2 += st[i] * st[i]; } }
+            if (s2 > cap * cap) { const double k = cap / std::sqrt(s2); for (int i = 0; i < 3; i++) st[i] *= k; }
+        }
+        for (int i = 0; i < 3; i++) { pout[i] += st[i]; pa_prev[i] = a[i]; if (bok) pb_prev[i] = b[i]; }
     }
     t_prev = t;
     for (int i = 0; i < VIOBENCH_STATE_VALUES; i++) out[i] = a[i];

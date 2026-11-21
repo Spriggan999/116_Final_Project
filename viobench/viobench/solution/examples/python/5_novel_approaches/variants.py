@@ -188,3 +188,5 @@ VARIANTS['msckf_splat_v2'] = dict(wasm='wasm/msckf_splat_v2.wasm')   # msckf_v2 
 VARIANTS['router'] = dict(wasm='wasm/router.wasm')                   # msckf_splat_v2 + learned_lin, blended by speed regime (router/)
 VARIANTS['router_lite'] = dict(wasm='wasm/router_lite.wasm')         # router with PR=3, MAX_ROWS=20, DETECT_CELLS=16 (~2/3 fuel)
 VARIANTS['router_lite2'] = dict(wasm='wasm/router_lite2.wasm')       # router_lite + sparse detection, splat-search skipping, speed-aware safeguards, growing splat map
+VARIANTS['router_dp'] = dict(wasm='wasm/router_dp.wasm')             # router_lite2 + depth-based scale prior on slow flights (DP)
+VARIANTS['router_dp2'] = dict(wasm='wasm/router_dp2.wasm')           # router_dp + learned_lin blended up to 0.65 m/s running speed (RT_HI=0.65)
