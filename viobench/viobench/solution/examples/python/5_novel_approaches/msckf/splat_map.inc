@@ -206,7 +206,7 @@ static void splat_create(const double* pf, int anchor_clone) {
     double T[9], C[9];
     for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) T[3 * i + j] = J[3 * i] * Hi[j] + J[3 * i + 1] * Hi[3 + j] + J[3 * i + 2] * Hi[6 + j];
     for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) C[3 * i + j] = s2 * (T[3 * i] * J[3 * j] + T[3 * i + 1] * J[3 * j + 1] + T[3 * i + 2] * J[3 * j + 2]);
-    const int b = NI + 6 * anchor_clone;
+    const int b = CB + 6 * anchor_clone;
     const double da = 1.0 / r;   // anchor depth
     double sth = (PP(b, b) + PP(b + 1, b + 1) + PP(b + 2, b + 2)) / 3.0;
     for (int i = 0; i < 3; i++) { for (int j = 0; j < 3; j++) C[3 * i + j] += SPL_POSE_K * PP(b + 3 + i, b + 3 + j); C[4 * i] += SPL_POSE_K * da * da * sth; }

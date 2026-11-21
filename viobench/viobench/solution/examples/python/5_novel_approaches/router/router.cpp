@@ -19,11 +19,24 @@
 #ifndef RT_V0
 #define RT_V0 0.7      // m/s: start value (default to the MSCKF)
 #endif
+#ifndef RT_RESET_FR
+#define RT_RESET_FR 0     // frames after an MSCKF divergence reset during which its weight is capped at RT_WRESET
+#endif
+#ifndef RT_WRESET
+#define RT_WRESET 0.5
+#endif
+#ifndef RT_SHRINK
+#define RT_SHRINK 1.0  // test: scale on the blended position step
+#endif
+#ifndef RT_WMAX
+#define RT_WMAX 1.0    // weight on the MSCKF at or above RT_HI
+#endif
 #ifndef RT_WMIN
 #define RT_WMIN 0.5
 #endif
 extern "C" {
 int32_t msckf_init(const char*, uint32_t); int32_t msckf_step(double, const uint8_t*, const double*, int32_t, double*);
+int32_t msckf_frames_since_reset(void);
 int32_t lin_init(const char*, uint32_t);   int32_t lin_step(double, const uint8_t*, const double*, int32_t, double*);
 }
 static double pa_prev[3], pb_prev[3], pout[3], vrun = RT_V0, t_prev = 0, w_last = 1;
@@ -49,9 +62,11 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         const double dt = t - t_prev;
         if (dt > 1e-4) vrun += (std::sqrt(sa) / dt - vrun) * (dt / RT_TAU);
         double x = (vrun - RT_LO) / (RT_HI - RT_LO); x = x < 0 ? 0 : (x > 1 ? 1 : x);
-        const double w = RT_WMIN + (1 - RT_WMIN) * x;
+        const double w = RT_WMIN + (RT_WMAX - RT_WMIN) * x;
+        const double wr = msckf_frames_since_reset() < RT_RESET_FR ? RT_WRESET : 1.0;   // just reset: lean on learned_lin
         w_last = w;
-        for (int i = 0; i < 3; i++) { pout[i] += w * da[i] + (1 - w) * db[i]; pa_prev[i] = a[i]; if (bok) pb_prev[i] = b[i]; }
+        const double wu = w < wr ? w : wr;
+        for (int i = 0; i < 3; i++) { pout[i] += RT_SHRINK * (wu * da[i] + (1 - wu) * db[i]); pa_prev[i] = a[i]; if (bok) pb_prev[i] = b[i]; }
     }
     t_prev = t;
     for (int i = 0; i < VIOBENCH_STATE_VALUES; i++) out[i] = a[i];

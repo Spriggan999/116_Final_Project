@@ -112,3 +112,27 @@ Host debug output (host builds only): `MSCKF_STATS=1` (track/triangulation/reset
 - Fewer clones (8-9), or 16-20 rows per frame: worse.
 - Allowing zero-velocity updates only at the start: worse; the default autopilot does slow down in flight.
 - IMU noise settings x0.5 / x2: within noise.
+
+## SLAM landmarks in the state (tried, not adopted)
+
+`-DSLAM_N=4` keeps up to 4 long-lived features in the EKF state (3 states each, between the IMU states and the clones),
+as OpenVINS does. A feature is promoted after `SLAM_MINOBS` observations using the delayed initialization of
+OpenVINS (the 3 Householder rows give its covariance and cross-covariance), then updated with 2 rows per frame while
+its KLT track lives. Default `SLAM_N=0` is bit-identical to router_lite2.
+
+Paired on 84 selection flights against router_lite2's MSCKF part (0.643 m):
+
+| Variant | Difference |
+|---|---:|
+| Promote any landmark, update every frame | +1.20 m |
+| Update every 5 / 10 frames | +0.82 / +0.69 m |
+| Pixel sigma 5 px | +1.12 m |
+| Promote only, never update | +0.04 m |
+| Promote only if position sigma < 0.3 m | +0.23 m |
+| Promote only if position sigma < 0.15 m | -0.008 m (almost nothing promoted) |
+| Anchored templates (needed for long tracks) alone / with SLAM | +0.08 / +1.25 m |
+
+Residuals stay sub-pixel and pass the chi-square gate, so the damage is not outliers. Landmarks enter with 2-3 m
+position sigma, are linearized at poor positions, and long KLT tracks drift slowly in a correlated way that the
+filter reads as precise information. In 0.55 s windows indoors, features rarely live long enough to add anything
+the MSCKF rows do not already give.

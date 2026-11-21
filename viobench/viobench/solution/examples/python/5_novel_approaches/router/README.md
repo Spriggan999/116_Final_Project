@@ -126,3 +126,80 @@ The three best candidates were then checked on the 144 test flights and on 48 sa
 
 None claims more area than router_lite, which stays the recommended build. Moving the score substantially would need
 a much larger structural fuel cut, not another parameter.
+
+## router_lite2: same accuracy, 16% less fuel (`../wasm/router_lite2.wasm`)
+
+Build:
+
+```bash
+./build_wasm.sh OUT.wasm -DPR=3 -DMAX_ROWS=20 -DDET_SPARSE=1 -DSPL_SKIP_ROWS=16 -DVMAX=6.0 \
+    -DVP_ADAPT=1 -DVP_K=1.2 -DVP_MIN=0.8 -DVPRIOR_SIG=3.0 -DSPL_GROW=1 -DSPL_SMAX_LATE=2.0 -DRT_WMAX=0.95
+```
+
+Changes against router_lite:
+
+- **Sparse corner scoring (`DET_SPARSE`).** The Shi-Tomasi score comes from 9 gradient samples 2 px apart instead of a
+  dense 5x5 window, with no per-pixel product pass. Detection is about 4x cheaper per cell, so the 16-cell cap is
+  dropped. On its own: selection -0.006 m (se 0.047), max fuel 3.89M to 3.45M.
+- **No splat search on heavy frames (`SPL_SKIP_ROWS=16`).** The worst frames are those where a full update, many
+  detection cells, all tracks and a splat search coincide. The splat search is skipped when the update used more than
+  16 rows, and retried later. On its own: selection -0.015 m (se 0.013), max fuel 3.45M to 3.20M.
+- **Speed-aware safeguards.** The divergence limit goes from 3 to 6 m/s; this is bit-identical locally, because no
+  local flight reaches 3 m/s. The weak velocity prior's sigma becomes 1.2 x the recent RMS speed, with a floor of
+  0.8 m/s: unchanged for slow flights, looser for fast ones. Selection -0.001 m overall, -0.13 m on 3x-gyro-bias
+  flights.
+- **Growing splat map (`SPL_GROW=1`).** New splats are added where few splats project into view, and the stalest slot
+  is recycled. It helps most on the faster flights.
+- **5% learned_lin on fast flights too (`RT_WMAX=0.95`).** The two estimators' errors are partly independent, so even
+  a small share helps: selection -0.012 m (se 0.004, 113/176 better), test -0.016 m (se 0.005, 82/144 better). A plain
+  3% shrink of the MSCKF's steps is worse (+0.008 m), so the gain is averaging, not shrinkage. 10% is about the same;
+  20% is worse.
+
+Results, paired against router_lite:
+
+| | Flights | Difference (se) | Better on |
+|---|---:|---:|---:|
+| Selection (dev, training, normal-dev2, 3x-gyro-bias sets) | 176 | -0.039 m (0.041) | 90/176 |
+| Fast flights with 3x gyro bias only | 32 | -0.143 m (0.073) | 20/32 |
+| Test, scored once (without the 5% blend) | 144 | +0.004 m (0.060) | 74/144 |
+| Test, final build with the 5% blend | 144 | -0.011 m (0.058), mean 0.820 m | 71/144 |
+
+Max fuel (sandbox, 48 episodes): 3.27M, against 3.89M for router_lite.
+
+Tried and rejected in this round:
+
+| Change | Result |
+|---|---|
+| Coarse LK level for fast flights | +0.21 m on the fast flights |
+| Load balancing detection on heavy frames | +0.05 m |
+| Single-precision update | +0.05 m, no fuel gain |
+| Manhattan-world heading measurement (`MANHATTAN=1`) | the dominant-axis angle from per-pixel gradients is too noisy on agile flights: +0.18 m |
+| LK start from the filter's predicted translation at the mean depth (`LK_TPRED`) | +0.31 m: velocity errors feed back into tracking |
+| Pixel noise 1.25 / 1.5 px; corner threshold 6 / 15; LK residual threshold 10 / 18 | +0.07 to +0.16 m |
+| Cap the MSCKF weight for 20-40 frames after a divergence reset | -0.003 to +0.05 m |
+| Soft reset (inflate velocity covariance only); stricter or more eager reset triggers | +0.04 to +0.19 m |
+| Lower corner threshold only when fewer than 16-20 tracks are active | +0.06 to +0.13 m |
+
+### Scheduling work so it does not coincide (tried, not adopted)
+
+A linear cost model fits router_lite2's per-frame fuel well (R^2 0.96): about 0.33M + 67k per update row + 44k per
+detection cell scored + 18k per track + 166k per splat search. The heaviest frames have about 16 rows, 15 cells and 31
+tracks at once. They are frames where many tracks were lost: the lost tracks become update rows, and their cells need
+refilling, in the same frame.
+
+Measured paired on 187 selection flights against router_lite2; max fuel from the sandbox (48 episodes; router_lite2:
+3.27M):
+
+| Change | Accuracy | Max fuel |
+|---|---:|---:|
+| Budget scheduler, detection capped by the budget (`SCHED=1`, 2.0-2.6M) | +0.08 to +0.17 m | |
+| Budget scheduler, update rows deferred, detection reserved (`SCHED=2`, 2.4M) | +0.02 m | 3.34M: the reserve underestimated refills |
+| The same with detection also capped | +0.11 m | |
+| Larger detection reserve, so more rows deferred (`SCHED=3`) | +0.12 to +0.26 m | |
+| Staggered track lengths 10-11 frames (`STAGGER=1`); 8-11 frames | +0.03 m; +0.14 to +0.16 m | 3.29M |
+| Coarser corner lattice only on big refill frames (`DET_REFILL_N=8`) | +0.07 m | 3.12M |
+| Lost tracks' rows one frame later (`LOST_DEFER=1`) | +0.05 m | 3.21M |
+| Shared gradient grid for sparse detection (`DET_SPARSE=2`) | identical | 3.81M (slower in wasm) |
+
+Every way of delaying work, whether new features, update rows or shorter tracks, costs accuracy roughly in
+proportion to how often it delays. The few-percent fuel savings never pay for that on the area score.

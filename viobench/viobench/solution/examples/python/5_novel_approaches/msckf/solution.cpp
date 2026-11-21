@@ -141,6 +141,114 @@ typedef double upd_t;
 #ifndef LK_EPS2
 #define LK_EPS2 0.0009f          // LK stops when the squared step is below this (0.03 px)
 #endif
+#ifndef MS_LOW_N
+#define MS_LOW_N 0               // with fewer than this many active tracks, detection accepts corners down to MIN_SCORE_LOW
+#endif
+#ifndef MIN_SCORE_LOW
+#define MIN_SCORE_LOW 5.0f
+#endif
+#ifndef DET_REFILL_N
+#define DET_REFILL_N 0           // >0: when more than this many tracks are missing, detection scores a DET_STEP_REFILL lattice
+#endif
+#ifndef DET_STEP_REFILL
+#define DET_STEP_REFILL 8
+#endif
+#ifndef LOST_DEFER
+#define LOST_DEFER 0             // 1: rows of tracks lost this frame are computed next frame (separates them from the refill)
+#endif
+#ifndef SLAM_MINOBS
+#define SLAM_MINOBS 8            // a live track becomes a landmark once it has spanned this many clones
+#endif
+#ifndef SLAM_MAXSIG
+#define SLAM_MAXSIG 0.3          // m: promote a track only if its landmark's initial position sigma (trace) is below this
+#endif
+#ifndef SLAM_EVERY
+#define SLAM_EVERY 1             // landmark rows every this many frames (KLT errors are correlated frame to frame)
+#endif
+#ifndef SLAM_SIG_PX
+#define SLAM_SIG_PX 1.5
+#endif
+#ifndef SLAM_GATE
+#define SLAM_GATE 9.21           // 2-dof chi^2, 99%
+#endif
+#ifndef STAGGER
+#define STAGGER 0                // >0: a live track finishes after N_CLONES - (slot % (STAGGER+1)) observations, so tracks
+#endif                           //     detected together do not all finish (and need update rows) on the same frame
+#ifndef SCHED
+#define SCHED 0                  // 1: per-frame fuel budget SCHED_B: update rows, splat search and detection cells are
+#endif                           //    capped from a linear cost model; what does not fit waits for the next frames
+#ifndef SCHED_B
+#define SCHED_B 2400000.0
+#endif
+#ifndef SC_BASE
+#define SC_BASE 330000.0
+#endif
+#ifndef SC_TRACK
+#define SC_TRACK 18000.0
+#endif
+#ifndef SC_ROW
+#define SC_ROW 67000.0
+#endif
+#ifndef SC_CELL
+#define SC_CELL 44000.0
+#endif
+#ifndef SC_SPLAT
+#define SC_SPLAT 166000.0
+#endif
+#ifndef SC_MINCELLS
+#define SC_MINCELLS 2
+#endif
+#ifndef SC_NEED_K
+#define SC_NEED_K 1.3            // SCHED=2: cells reserved per missing track (some cells find no corner)
+#endif
+#ifndef SC_MINROWS
+#define SC_MINROWS 6
+#endif
+#ifndef RESET_SOFT
+#define RESET_SOFT 0             // 1: a triangulation-failure reset only inflates the velocity covariance (SOFT_SIG)
+#endif
+#ifndef SOFT_SIG
+#define SOFT_SIG 0.5
+#endif
+#ifndef LK_TPRED
+#define LK_TPRED 0               // 1: LK starts from the rotation AND the filter's predicted translation (at the mean depth)
+#endif
+#ifndef MANHATTAN
+#define MANHATTAN 0              // 1: Manhattan-world heading measurement (yaw about gravity), see manhattan_step()
+#endif
+#ifndef MH_EVERY
+#define MH_EVERY 5
+#endif
+#ifndef MH_STEP
+#define MH_STEP 10
+#endif
+#ifndef MH_G2
+#define MH_G2 900.0
+#endif
+#ifndef MH_VERT
+#define MH_VERT 0.15
+#endif
+#ifndef MH_COH
+#define MH_COH 0.3
+#endif
+#ifndef MH_T0
+#define MH_T0 20
+#endif
+#ifndef MH_GATE
+#define MH_GATE 0.17
+#endif
+#ifndef MH_SIG
+#define MH_SIG 0.05
+#endif
+#ifndef MH_SIGN
+#define MH_SIGN 1.0
+#endif
+#ifndef SPL_SKIP_ROWS
+#define SPL_SKIP_ROWS 1000       // skip the splat search on frames whose feature update used more rows than this
+#endif
+#ifndef DET_SPARSE
+#define DET_SPARSE 0             // 1: corner score from 9 gradient samples 2 px apart instead of a dense 5x5 window
+#endif
 #ifndef LB_ROWS
 #define LB_ROWS 1000             // load balancing: if this frame's feature update has more rows than this ...
 #endif
@@ -267,7 +375,11 @@ typedef double upd_t;
 #endif
 
 static const int NI = 18;                          // IMU error states
-static const int NMAX = NI + 6 * N_CLONES;
+#ifndef SLAM_N
+#define SLAM_N 0                 // OpenVINS-style SLAM landmarks in the state (3 states each), between IMU states and clones
+#endif
+static const int SL = 3 * SLAM_N, CB = NI + SL;   // CB = first clone state
+static const int NMAX = CB + 6 * N_CLONES;
 static const int TH = 0, PS = 3, VE = 6, BG = 9, BA = 12, GR = 15;
 
 // ---------------------------------------------------------------- small math
@@ -321,7 +433,7 @@ static const uint8_t* img = nullptr; // current frame (RGB)
 
 static M3 Rwi; static double pw[3], vw[3], bg[3], ba[3], gw[3];
 static double P[NMAX * NMAX];
-static int n_state = NI;
+static int n_state = CB;
 struct Clone { M3 R; double p[3]; int serial; M3 Rf; double pf[3]; };   // Rf, pf: first estimates (FEJ)
 static Clone clones[N_CLONES];
 static int n_clones = 0, frame_no = 0;
@@ -339,6 +451,7 @@ struct Feat {
     float Hf[6], Hc[6];       // inverse 3x3 normal matrices (symmetric, upper)
     float ox, oy;             // feature position minus template centre
     bool anchored;            // anchor template valid (ANCHOR)
+    int lm1;                  // SLAM landmark slot + 1 this live track measures (0: none)
     int nobs; Obs obs[N_CLONES + 1];
 };
 static Feat feats[MAX_FEATS], sub_feat, sub_feat2;
@@ -356,6 +469,19 @@ static int cool[GRID_X * GRID_Y];
 static int n_tried = 0, n_ok = 0, bad_streak = 0;
 static double depth_avg = 2.5, frame_dt = 0.05;
 static long st_far = 0;
+struct Lm { bool active; int fidx, bad; double p[3]; };
+static Lm lms[SLAM_N > 0 ? SLAM_N : 1];
+static long st_lm_init = 0, st_lm_rows = 0, st_lm_gate = 0;
+static bool det_refill = false;
+static int row_cap = MAX_ROWS, frame_tracks = 0;   // frame budget scheduler (SCHED)
+static double sched_used = 0;
+static int sched_need = 0;
+static int last_reset_frame = -100000;
+static double tpred_c[3] = {0, 0, 0};
+static double mh_C = 0, mh_S = 0, mh_W = 0, mh_ref = 0, mh_e1[3], mh_e2[3];
+static bool mh_ref_ok = false, mh_basis = false;
+static long st_mh_upd = 0;
+
 static int frame_rows = 0;
 static double v2_avg = 0.25;
 static int frame_tri_fail = 0, zupt_count = 0; static bool tri_par = false, moved = false; static int move_frames = 0;
@@ -711,7 +837,7 @@ static void propagate(const double* imu, int n) {
 // ---------------------------------------------------------------- clones
 static void add_clone() {
     if (n_clones == N_CLONES) return;
-    const int c = NI + 6 * n_clones;
+    const int c = CB + 6 * n_clones;
     clones[n_clones].R = Rwi; for (int i = 0; i < 3; i++) clones[n_clones].p[i] = pw[i];
     clones[n_clones].Rf = Rwi; for (int i = 0; i < 3; i++) clones[n_clones].pf[i] = pw[i];
     clones[n_clones].serial = frame_no;
@@ -723,7 +849,7 @@ static void add_clone() {
 }
 static void drop_oldest_clone() {
     // remove rows/cols NI..NI+5 (memmove)
-    const int c = NI, n = n_state, tail = n - c - 6;
+    const int c = CB, n = n_state, tail = n - c - 6;
     for (int i = 0; i < n; i++) {
         if (i >= c && i < c + 6) continue;
         double* src = P + i * NMAX; double* dst = P + (i < c ? i : i - 6) * NMAX;
@@ -734,7 +860,7 @@ static void drop_oldest_clone() {
     n_clones--; n_state -= 6;
 }
 static void drop_clone(int k) {   // remove clone k (rows/cols NI+6k..NI+6k+5)
-    const int c = NI + 6 * k, n = n_state, tail = n - c - 6;
+    const int c = CB + 6 * k, n = n_state, tail = n - c - 6;
     for (int i = 0; i < n; i++) {
         if (i >= c && i < c + 6) continue;
         double* src = P + i * NMAX; double* dst = P + (i < c ? i : i - 6) * NMAX;
@@ -763,8 +889,9 @@ static void inject(const double* dx) {
     M3 dR = expso3(dx + TH); Rwi = mmul(dR, Rwi); orthonormalize(Rwi);
     for (int i = 0; i < 3; i++) { pw[i] += dx[PS + i]; vw[i] += dx[VE + i]; bg[i] += dx[BG + i]; ba[i] += dx[BA + i]; gw[i] += dx[GR + i]; }
     { double ng = std::sqrt(gw[0] * gw[0] + gw[1] * gw[1] + gw[2] * gw[2]); for (int i = 0; i < 3; i++) gw[i] *= 9.81 / ng; }
+    for (int q = 0; q < SLAM_N; q++) if (lms[q].active) for (int i = 0; i < 3; i++) lms[q].p[i] += dx[NI + 3 * q + i];
     for (int k = 0; k < n_clones; k++) {
-        const double* d = dx + NI + 6 * k;
+        const double* d = dx + CB + 6 * k;
         M3 dRc = expso3(d); clones[k].R = mmul(dRc, clones[k].R); orthonormalize(clones[k].R);
         for (int i = 0; i < 3; i++) clones[k].p[i] += d[3 + i];
     }
@@ -941,6 +1068,11 @@ static bool triangulate(const Feat& f, const int* ck, double* pf) {
 static int feature_rows(const Feat& f0);
 // queue a finished track (its observations) for an update on this or a later frame
 static Pending cand[MAX_FEATS + MAX_PENDING]; static int ncand = 0;
+static Pending dlist[MAX_FEATS]; static int ndef = 0;   // LOST_DEFER: lost tracks wait one frame
+static void defer_obs(const Feat& f) {
+    if (f.nobs < 3 || ndef >= MAX_FEATS) return;
+    dlist[ndef].nobs = f.nobs; dlist[ndef].fidx = -1; for (int o = 0; o < f.nobs; o++) dlist[ndef].obs[o] = f.obs[o]; ndef++;
+}
 static void queue_obs(const Feat& f) {
     if (f.nobs < 3 || ncand >= MAX_FEATS + MAX_PENDING) return;
     cand[ncand].nobs = f.nobs; cand[ncand].fidx = f.active ? (int)(&f - feats) : -1;
@@ -954,7 +1086,7 @@ static void process_candidates(int drop_serial) {
     npend = 0; ncand = 0;
     for (int i = 0; i < na; i++) {
         Pending& c = all[i];
-        if (nrows + 2 * (c.nobs < OBS_MAX ? c.nobs : OBS_MAX) - 3 > MAX_ROWS) {
+        if (nrows + 2 * (c.nobs < OBS_MAX ? c.nobs : OBS_MAX) - 3 > row_cap) {
             // no room this frame: keep it for the next one, without the observation of the clone that leaves
             int k = 0; for (int o = 0; o < c.nobs; o++) if (c.obs[o].serial != drop_serial) c.obs[k++] = c.obs[o];
             c.nobs = k;
@@ -1040,21 +1172,63 @@ static int feature_rows(const Feat& f0) {
         for (int cc = 0; cc < nc; cc++) { double s = 0; for (int i = c; i < rr; i++) s += vh[i] * Hx[i][cc]; s *= beta; if (s != 0) for (int i = c; i < rr; i++) Hx[i][cc] -= s * vh[i]; }
         { double s = 0; for (int i = c; i < rr; i++) s += vh[i] * res[i]; s *= beta; for (int i = c; i < rr; i++) res[i] -= s * vh[i]; }
     }
+    if (SLAM_N > 0 && !far && cur_fidx >= 0 && feats[cur_fidx].active && feats[cur_fidx].lm1 == 0 && f0.nobs >= SLAM_MINOBS) {
+        // delayed initialisation (OpenVINS): rows 0..2 after the Householder step are r1 = H1 dx + R1 df + n1, R1 upper
+        // triangular; the landmark enters the state with P_fx = -R1^-1 H1 P, P_ff = R1^-1 (H1 P H1^T + s2 I) R1^-T
+        int slot = -1; for (int q = 0; q < SLAM_N; q++) if (!lms[q].active) { slot = q; break; }
+        if (slot >= 0 && std::fabs(Hf[0][0]) > 1e-9 && std::fabs(Hf[1][1]) > 1e-9 && std::fabs(Hf[2][2]) > 1e-9) {
+            double A[3][3] = {{0}};
+            A[0][0] = 1 / Hf[0][0]; A[1][1] = 1 / Hf[1][1]; A[2][2] = 1 / Hf[2][2];
+            A[0][1] = -Hf[0][1] * A[1][1] * A[0][0]; A[1][2] = -Hf[1][2] * A[2][2] * A[1][1];
+            A[0][2] = -(Hf[0][1] * A[1][2] + Hf[0][2] * A[2][2]) * A[0][0];
+            static double H1P[3][NMAX];
+            for (int a = 0; a < 3; a++) for (int j = 0; j < n_state; j++) {
+                double acc = 0;
+                for (int o = 0; o < m; o++) { const int base = CB + 6 * ck[o]; for (int c = 0; c < 6; c++) { const double h = Hx[a][6 * o + c]; if (h != 0) acc += h * PP(base + c, j); } }
+                H1P[a][j] = acc;
+            }
+            const double sg2 = (SIG_PX / fx) * (SIG_PX / fx);
+            double S1[3][3];
+            for (int a = 0; a < 3; a++) for (int b = 0; b < 3; b++) {
+                double acc = a == b ? sg2 : 0;
+                for (int o = 0; o < m; o++) { const int base = CB + 6 * ck[o]; for (int c = 0; c < 6; c++) acc += H1P[a][base + c] * Hx[b][6 * o + c]; }
+                S1[a][b] = acc;
+            }
+            const int L = NI + 3 * slot;
+            double Pff[3][3], trc = 0;
+            for (int i = 0; i < 3; i++) for (int k = 0; k < 3; k++) {
+                double acc = 0;
+                for (int a = 0; a < 3; a++) for (int b = 0; b < 3; b++) acc += A[i][a] * S1[a][b] * A[k][b];
+                Pff[i][k] = acc;
+            }
+            for (int i = 0; i < 3; i++) trc += Pff[i][i];
+            if (trc < SLAM_MAXSIG * SLAM_MAXSIG) {
+            for (int i = 0; i < 3; i++) for (int j = 0; j < n_state; j++) {
+                const double v = -(A[i][0] * H1P[0][j] + A[i][1] * H1P[1][j] + A[i][2] * H1P[2][j]);
+                PP(L + i, j) = v; PP(j, L + i) = v;
+            }
+            for (int i = 0; i < 3; i++) for (int k = 0; k < 3; k++) PP(L + i, L + k) = Pff[i][k];
+            Lm& l = lms[slot]; l.active = true; l.fidx = cur_fidx; l.bad = 0;
+            for (int i = 0; i < 3; i++) l.p[i] = pf[i] + A[i][0] * res[0] + A[i][1] * res[1] + A[i][2] * res[2];
+            feats[cur_fidx].lm1 = slot + 1; st_lm_init++;
+            }
+        }
+    }
     const int nr = rr - 3;
-    if (nrows + nr > MAX_ROWS) return 0;
+    if (nrows + nr > row_cap) return 0;
     const double s2 = far ? (LP_SIG_PX / fx) * (LP_SIG_PX / fx) : (SIG_PX / fx) * (SIG_PX / fx);
 #if CHI2_ON
     // chi2 test: r^T (H P H^T + s2 I)^-1 r
     static double HP[2 * (N_CLONES + 1)][NMAX];
     for (int a = 0; a < nr; a++) for (int j = 0; j < n_state; j++) {
         double s = 0;
-        for (int o = 0; o < m; o++) { const int base = NI + 6 * ck[o]; for (int c = 0; c < 6; c++) { double h = Hx[3 + a][6 * o + c]; if (h != 0) s += h * PP(base + c, j); } }
+        for (int o = 0; o < m; o++) { const int base = CB + 6 * ck[o]; for (int c = 0; c < 6; c++) { double h = Hx[3 + a][6 * o + c]; if (h != 0) s += h * PP(base + c, j); } }
         HP[a][j] = s;
     }
     static double Sm[2 * (N_CLONES + 1)][2 * (N_CLONES + 1)];
     for (int a = 0; a < nr; a++) for (int b = 0; b <= a; b++) {
         double s = 0;
-        for (int o = 0; o < m; o++) { const int base = NI + 6 * ck[o]; for (int c = 0; c < 6; c++) s += HP[a][base + c] * Hx[3 + b][6 * o + c]; }
+        for (int o = 0; o < m; o++) { const int base = CB + 6 * ck[o]; for (int c = 0; c < 6; c++) s += HP[a][base + c] * Hx[3 + b][6 * o + c]; }
         if (a == b) s += s2;
         Sm[a][b] = s; Sm[b][a] = s;
     }
@@ -1075,7 +1249,7 @@ static int feature_rows(const Feat& f0) {
 #endif
     for (int a = 0; a < nr; a++) {
         int t = 0;
-        for (int o = 0; o < m; o++) { const int base = NI + 6 * ck[o]; for (int c = 0; c < 6; c++) { ridx[nrows][t] = base + c; rval[nrows][t] = Hx[3 + a][6 * o + c]; t++; } }
+        for (int o = 0; o < m; o++) { const int base = CB + 6 * ck[o]; for (int c = 0; c < 6; c++) { ridx[nrows][t] = base + c; rval[nrows][t] = Hx[3 + a][6 * o + c]; t++; } }
         rnnz[nrows] = t; rs[nrows] = res[3 + a]; Rd[nrows] = s2; nrows++;
     }
     create_obs = &f;
@@ -1110,15 +1284,20 @@ static float derotated_median() {
 }
 
 static void track(const M3& Rcc) {   // Rcc: new camera <- old camera rotation (gyro)
-    nflow = 0;
+    nflow = 0; frame_tracks = 0;
     for (int i = 0; i < MAX_FEATS; i++) {
         Feat& f = feats[i]; if (!f.active) continue;
-        st_tracks++;
+        st_tracks++; frame_tracks++;
         double b[3] = {(f.x - cx) / fx, (f.y - cy) / fy, 1}, q[3]; mv(Rcc, b, q);
         if (q[2] < 0.1) { f.active = false; continue; }
         float px = (float)(fx * q[0] / q[2] + cx), py = (float)(fy * q[1] / q[2] + cy);
-        float x = px + f.fdx - f.ox, y = py + f.fdy - f.oy, off = 0;
-        if (!inside(x, y, 4 * PR + 4)) { x = px - f.ox; y = py - f.oy; }
+        float sx = px, sy = py;   // LK start: rotation-only, or with the filter's predicted translation (LK_TPRED)
+        if (LK_TPRED) {
+            const double Z = depth_avg, qt[3] = {q[0] * Z - tpred_c[0], q[1] * Z - tpred_c[1], q[2] * Z - tpred_c[2]};
+            if (qt[2] > 0.1) { sx = (float)(fx * qt[0] / qt[2] + cx); sy = (float)(fy * qt[1] / qt[2] + cy); }
+        }
+        float x = sx + f.fdx - f.ox, y = sy + f.fdy - f.oy, off = 0;
+        if (!inside(x, y, 4 * PR + 4)) { x = sx - f.ox; y = sy - f.oy; }
         float r1 = LK_COARSE > 0 ? lk_level(f, 1, x, y, off, LK_COARSE) : 0;
         if (r1 < 0) { f.active = false; continue; }
         float r2 = lk_level(f, 0, x, y, off, LK_FINE);
@@ -1130,7 +1309,7 @@ static void track(const M3& Rcc) {   // Rcc: new camera <- old camera rotation (
             else f.anchored = false;
         }
         x += f.ox; y += f.oy;
-        f.fdx = 0.7f * (x - px); f.fdy = 0.7f * (y - py);
+        f.fdx = 0.7f * (x - sx); f.fdy = 0.7f * (y - sy);
         fl_u[nflow] = (float)(q[0] / q[2]); fl_v[nflow] = (float)(q[1] / q[2]);
         fl_du[nflow] = (float)((x - px) / fx); fl_dv[nflow] = (float)((y - py) / fy);
         flow[nflow++] = std::sqrt((x - px) * (x - px) + (y - py) * (y - py));
@@ -1153,7 +1332,10 @@ static void detect() {
         if (gx >= 0 && gx < GRID_X && gy >= 0 && gy < GRID_Y) occ[gy * GRID_X + gx] = true;
     }
     int scored = 0;
-    const int det_cap = frame_rows > LB_ROWS ? LB_CELLS : DETECT_CELLS;   // load balancing: heavy update frame -> detect less
+    det_refill = DET_REFILL_N > 0 && MAX_FEATS - nact > DET_REFILL_N;
+    int det_cap = frame_rows > LB_ROWS ? LB_CELLS : DETECT_CELLS;   // load balancing: heavy update frame -> detect less
+    if (SCHED == 1) { const int dc = (int)((SCHED_B - sched_used) / SC_CELL); det_cap = dc < SC_MINCELLS ? SC_MINCELLS : (dc > DETECT_CELLS ? DETECT_CELLS : dc); }
+    if (SCHED == 2) { int dc = (int)((SCHED_B - sched_used) / SC_CELL); if (dc < sched_need) dc = sched_need; det_cap = dc > DETECT_CELLS ? DETECT_CELLS : dc; }
     for (int kk = 0; kk < GRID_X * GRID_Y && scored < det_cap && nact < MAX_FEATS; kk++) {
         int cell = (det_rr + kk) % (GRID_X * GRID_Y);
         if (occ[cell]) continue;
@@ -1177,7 +1359,7 @@ static void detect() {
             const float* q = hv + j * ew + i; float dx = q[1] - q[-1], dy = q[ew] - q[-ew];
             ga[j * ew + i] = dx * dx; gb[j * ew + i] = dx * dy; gc[j * ew + i] = dy * dy;
         }
-        float best = MIN_SCORE; int bx = -1, by = -1;
+        float best = nact < MS_LOW_N ? MIN_SCORE_LOW : MIN_SCORE; int bx = -1, by = -1;
         for (int j = 2; j < hh + 2; j++) for (int i = 2; i < hw + 2; i++) {
             const int x = x0 + 2 * (i - 2) + 1, y = y0 + 2 * (j - 2) + 1;   // full-res centre of the 2x2 block
             if (x < 4 * PR + 8 || y < 4 * PR + 8 || x >= W - 4 * PR - 9 || y >= H - 4 * PR - 9) continue;
@@ -1203,6 +1385,53 @@ static void detect() {
             if (mx < PRETEST) { cool[cell] = frame_no + COOL; continue; }
         }
         st_cells++;
+#if DET_SPARSE == 2
+        // sparse score as below, but each 2-px grid sample's gradient products are computed once per cell and shared by
+        // the (up to 4) candidates that use it; the sums keep the same order, so the scores are identical
+        static float sa[32 * 32], sb[32 * 32], sc2[32 * 32];
+        const int gx0 = x0 + DET_STEP / 2 - 2, gy0 = y0 + DET_STEP / 2 - 2;   // first sample of the first candidate
+        const int ncx = (cw - DET_STEP / 2 + DET_STEP - 1) / DET_STEP, ncy = (chh - DET_STEP / 2 + DET_STEP - 1) / DET_STEP;
+        const int gnx = 2 * ncx + 1, gny = 2 * ncy + 1;
+        for (int j = 0; j < gny; j++) {
+            const int yy = gy0 + 2 * j;
+            for (int i = 0; i < gnx; i++) {
+                const int xx = gx0 + 2 * i; const int o = j * gnx + i;
+                if (xx < 1 || yy < 1 || xx >= W - 1 || yy >= H - 1) { sa[o] = sb[o] = sc2[o] = 0; continue; }
+                const uint8_t* q = img + (yy * W + xx) * 3 + 1;
+                const float dx = (float)q[3] - (float)q[-3], dy = (float)q[3 * W] - (float)q[-3 * W];
+                sa[o] = dx * dx; sb[o] = dx * dy; sc2[o] = dy * dy;
+            }
+        }
+        float best = nact < MS_LOW_N ? MIN_SCORE_LOW : MIN_SCORE; int bx = -1, by = -1;
+        for (int cj = 0; cj < ncy; cj++) for (int ci = 0; ci < ncx; ci++) {
+            const int x = x0 + DET_STEP / 2 + DET_STEP * ci, y = y0 + DET_STEP / 2 + DET_STEP * cj;
+            if (x < 2 * PR + 6 || y < 2 * PR + 6 || x >= W - 2 * PR - 7 || y >= H - 2 * PR - 7) continue;
+            float a = 0, b = 0, c = 0;
+            for (int j = 0; j < 3; j++) { const int o = (2 * cj + j) * gnx + 2 * ci; for (int i = 0; i < 3; i++) { a += sa[o + i]; b += sb[o + i]; c += sc2[o + i]; } }
+            float tr = 0.5f * (a + c), dd = std::sqrt(0.25f * (a - c) * (a - c) + b * b);
+            float lmin = (tr - dd) * (1.0f / 36.0f);
+            if (lmin > best) { best = lmin; bx = x; by = y; }
+        }
+#elif DET_SPARSE
+        // sparse score: structure tensor from a 3x3 grid of gradient samples 2 px apart (no per-pixel product pass)
+        float best = nact < MS_LOW_N ? MIN_SCORE_LOW : MIN_SCORE; int bx = -1, by = -1;
+        const int ds = det_refill ? DET_STEP_REFILL : DET_STEP;   // a big refill frame scores a coarser lattice
+        for (int y = y0 + ds / 2; y < y0 + chh; y += ds) for (int x = x0 + ds / 2; x < x0 + cw; x += ds) {
+            if (x < 2 * PR + 6 || y < 2 * PR + 6 || x >= W - 2 * PR - 7 || y >= H - 2 * PR - 7) continue;
+            float a = 0, b = 0, c = 0;
+            for (int j = -2; j <= 2; j += 2) {
+                const uint8_t* row = img + ((y + j) * W + x) * 3 + 1;
+                for (int i = -2; i <= 2; i += 2) {
+                    const uint8_t* q = row + 3 * i;
+                    const float dx = (float)q[3] - (float)q[-3], dy = (float)q[3 * W] - (float)q[-3 * W];
+                    a += dx * dx; b += dx * dy; c += dy * dy;
+                }
+            }
+            float tr = 0.5f * (a + c), dd = std::sqrt(0.25f * (a - c) * (a - c) + b * b);
+            float lmin = (tr - dd) * (1.0f / 36.0f);   // 9 samples (scale matches 25 samples / 100)
+            if (lmin > best) { best = lmin; bx = x; by = y; }
+        }
+#else
         // gradient products of every pixel the candidate windows touch, computed once, then 5x5 window sums
         static float pa[64 * 64], pb[64 * 64], pc[64 * 64];
         int ox = x0 + DET_STEP / 2 - 2, oy = y0 + DET_STEP / 2 - 2;     // window origin of the first candidate
@@ -1223,7 +1452,7 @@ static void detect() {
                 }
             }
         }
-        float best = MIN_SCORE; int bx = -1, by = -1;
+        float best = nact < MS_LOW_N ? MIN_SCORE_LOW : MIN_SCORE; int bx = -1, by = -1;
         for (int y = y0 + DET_STEP / 2; y < y0 + chh; y += DET_STEP) for (int x = x0 + DET_STEP / 2; x < x0 + cw; x += DET_STEP) {
             if (x < 2 * PR + 6 || y < 2 * PR + 6 || x >= W - 2 * PR - 7 || y >= H - 2 * PR - 7) continue;
             float a = 0, b = 0, c = 0;
@@ -1236,13 +1465,14 @@ static void detect() {
             if (lmin > best) { best = lmin; bx = x; by = y; }
         }
 #endif
+#endif
         if (bx < 0) { cool[cell] = frame_no + COOL; continue; }
         int slot = -1; for (int i = 0; i < MAX_FEATS; i++) if (!feats[i].active) { slot = i; break; }
         if (slot < 0) break;
         Feat& f = feats[slot];
         f.x = (float)bx; f.y = (float)by; f.fdx = f.fdy = 0; f.nobs = 0;
         if (!cut_template(f)) continue;
-        f.active = true; f.anchored = false; nact++;
+        f.active = true; f.anchored = false; f.lm1 = 0; nact++;
         if (is_kf) { f.obs[0].serial = frame_no; f.obs[0].u = (float)((f.x - cx) / fx); f.obs[0].v = (float)((f.y - cy) / fy); f.nobs = 1; } else f.nobs = 0;
     }
     det_rr = (det_rr + 7) % (GRID_X * GRID_Y);
@@ -1279,8 +1509,113 @@ VIOBENCH_EXPORT(init) int32_t init(const char* cfg, uint32_t n) {
     }
     for (int i = 0; i < 3; i++) { for (int j = 0; j < 3; j++) Rci.m[3 * i + j] = T[4 * i + j]; tci[i] = T[4 * i + 3]; }
     std::memset(P, 0, sizeof P); std::memset(feats, 0, sizeof feats); std::memset(cool, 0, sizeof cool);
-    n_state = NI; n_clones = 0; frame_no = 0; started = false; npend = 0; n_splats = 0; imu_have = false; v2_avg = 0.25; n_hitf = 0; fej_ok = false; depth_avg = 2.5; moved = false; move_frames = 0;
+    for (int q = 0; q < (SLAM_N > 0 ? SLAM_N : 1); q++) { lms[q].active = false; lms[q].fidx = -1; }
+    n_state = CB; n_clones = 0; frame_no = 0; started = false; npend = 0; n_splats = 0; last_reset_frame = -100000; mh_C = mh_S = mh_W = 0; mh_ref_ok = mh_basis = false; imu_have = false; v2_avg = 0.25; n_hitf = 0; fej_ok = false; depth_avg = 2.5; moved = false; move_frames = 0;
     return VIOBENCH_STATUS_OK;
+}
+
+// ---------------------------------------------------------------- Manhattan heading measurement (MANHATTAN)
+// Indoor edges mostly follow a few horizontal axes 90 deg apart. Every frame a slice of a sparse gradient grid is
+// turned into 3D edge directions with the filter's attitude; horizontal ones vote for the dominant axis modulo 90 deg
+// (4th power of the unit direction, no trig). Each MH_EVERY frames the vote is compared with a reference taken early
+// in the flight, and the difference is a yaw measurement (rotation about gravity), gated to +-MH_GATE.
+static void manhattan_step() {
+    double gn = std::sqrt(gw[0] * gw[0] + gw[1] * gw[1] + gw[2] * gw[2]); if (!(gn > 0)) return;
+    const double g[3] = {gw[0] / gn, gw[1] / gn, gw[2] / gn};
+    if (!mh_basis) {
+        double e[3] = {1, 0, 0}; const double dp = e[0] * g[0] + e[1] * g[1] + e[2] * g[2];
+        for (int i = 0; i < 3; i++) e[i] -= dp * g[i];
+        const double en = std::sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]); for (int i = 0; i < 3; i++) mh_e1[i] = e[i] / en;
+        mh_e2[0] = g[1] * mh_e1[2] - g[2] * mh_e1[1]; mh_e2[1] = g[2] * mh_e1[0] - g[0] * mh_e1[2]; mh_e2[2] = g[0] * mh_e1[1] - g[1] * mh_e1[0];
+        mh_basis = true;
+    }
+    const M3 M = mmul(Rwi, mtr(Rci));     // world <- camera
+    const int phase = frame_no % MH_EVERY;
+    for (int y = MH_STEP + phase * (MH_STEP / MH_EVERY > 0 ? MH_STEP / MH_EVERY : 1); y < H - MH_STEP; y += MH_STEP) {
+        const uint8_t* row = img + (y * W) * 3 + 1;
+        for (int x = MH_STEP; x < W - MH_STEP; x += MH_STEP) {
+            const uint8_t* q = row + 3 * x;
+            const double gx = (double)q[3] - (double)q[-3], gy = (double)q[3 * W] - (double)q[-3 * W];
+            const double g2 = gx * gx + gy * gy;
+            if (g2 < MH_G2) continue;
+            const double tnx = -gy / fx, tny = gx / fy, ux = (x - cx) / fx, uy = (y - cy) / fy;
+            const double nc[3] = {-tny, tnx, ux * tny - uy * tnx};
+            double n[3]; mv(M, nc, n);
+            const double nn = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]); if (!(nn > 0)) continue;
+            const double ng = (n[0] * g[0] + n[1] * g[1] + n[2] * g[2]) / nn;
+            if (std::fabs(ng) < MH_VERT) continue;                 // a vertical edge: no heading information
+            const double d[3] = {n[1] * g[2] - n[2] * g[1], n[2] * g[0] - n[0] * g[2], n[0] * g[1] - n[1] * g[0]};
+            const double a = d[0] * mh_e1[0] + d[1] * mh_e1[1] + d[2] * mh_e1[2], b = d[0] * mh_e2[0] + d[1] * mh_e2[1] + d[2] * mh_e2[2];
+            const double r2 = a * a + b * b; if (!(r2 > 1e-12)) continue;
+            const double c2 = a * a - b * b, s2 = 2 * a * b, inv = 1.0 / (r2 * r2);
+            const double w = std::sqrt(g2);
+            mh_C += w * (c2 * c2 - s2 * s2) * inv; mh_S += w * (2 * c2 * s2) * inv; mh_W += w;
+        }
+    }
+    if (phase != MH_EVERY - 1) return;
+    const double C = mh_C, S = mh_S, Wt = mh_W; mh_C = mh_S = mh_W = 0;
+#ifndef __wasm__
+    if (std::getenv("MH_DUMP") && Wt > 0) std::fprintf(stderr, "MH %d coh %.2f psi %.1f ref %.1f\n", frame_no, std::sqrt(C * C + S * S) / Wt, 0.25 * std::atan2(S, C) * 57.2958, mh_ref * 57.2958);
+#endif
+    if (!(Wt > 0) || std::sqrt(C * C + S * S) < MH_COH * Wt) return;
+    const double psi = 0.25 * std::atan2(S, C);
+    if (!mh_ref_ok) { if (frame_no >= MH_T0) { mh_ref = psi; mh_ref_ok = true; } return; }
+    double dlt = psi - mh_ref; const double q = 0.5 * 3.14159265358979;
+    while (dlt > 0.5 * q) dlt -= q;
+    while (dlt < -0.5 * q) dlt += q;
+    if (std::fabs(dlt) > MH_GATE) return;
+    nrows = 0;
+    rnnz[0] = 3; for (int i = 0; i < 3; i++) { ridx[0][i] = TH + i; rval[0][i] = MH_SIGN * g[i]; }
+    rs[0] = -dlt; Rd[0] = MH_SIG * MH_SIG; nrows = 1;
+    ekf_update(); st_mh_upd++;
+}
+
+static void slam_drop(int q) {   // marginalise landmark q: remove its rows and columns
+    const int L = NI + 3 * q;
+    for (int i = 0; i < 3; i++) for (int j = 0; j < n_state; j++) { PP(L + i, j) = 0; PP(j, L + i) = 0; }
+    if (lms[q].fidx >= 0 && feats[lms[q].fidx].lm1 == q + 1) feats[lms[q].fidx].lm1 = 0;
+    lms[q].active = false; lms[q].fidx = -1;
+}
+static void slam_step() {   // each landmark whose KLT track lives: 2 rows on the current pose and the landmark
+    nrows = 0;
+    const M3 RcRt = mmul(Rci, mtr(Rwi));
+    const double s2 = (SLAM_SIG_PX / fx) * (SLAM_SIG_PX / fx);
+    for (int q = 0; q < SLAM_N; q++) {
+        Lm& l = lms[q]; if (!l.active) continue;
+        if (l.fidx < 0 || !feats[l.fidx].active || feats[l.fidx].lm1 != q + 1) { slam_drop(q); continue; }
+        const Feat& f = feats[l.fidx];
+        double d[3] = {l.p[0] - pw[0], l.p[1] - pw[1], l.p[2] - pw[2]}, pc[3]; mv(RcRt, d, pc); for (int i = 0; i < 3; i++) pc[i] += tci[i];
+        if (pc[2] < MIN_DEPTH) { slam_drop(q); continue; }
+        const double iz = 1.0 / pc[2], u = pc[0] * iz, v = pc[1] * iz;
+        const double r[2] = {(f.x - cx) / fx - u, (f.y - cy) / fy - v};
+        const double Jp[2][3] = {{iz, 0, -u * iz}, {0, iz, -v * iz}};
+        const M3 dth = mmul(RcRt, skew(d));
+        double Hr[2][9]; int id[9];
+        for (int c = 0; c < 3; c++) { id[c] = TH + c; id[3 + c] = PS + c; id[6 + c] = NI + 3 * q + c; }
+        for (int a = 0; a < 2; a++) for (int c = 0; c < 3; c++) {
+            double sf = 0, st = 0;
+            for (int k = 0; k < 3; k++) { sf += Jp[a][k] * RcRt.m[3 * k + c]; st += Jp[a][k] * dth.m[3 * k + c]; }
+            Hr[a][c] = st; Hr[a][3 + c] = -sf; Hr[a][6 + c] = sf;
+        }
+        double S[2][2];   // chi^2 gate: r^T (H P H^T + s2 I)^-1 r
+        for (int a = 0; a < 2; a++) for (int b = 0; b < 2; b++) {
+            double acc = a == b ? s2 : 0;
+            for (int i = 0; i < 9; i++) for (int j = 0; j < 9; j++) acc += Hr[a][i] * PP(id[i], id[j]) * Hr[b][j];
+            S[a][b] = acc;
+        }
+        const double det = S[0][0] * S[1][1] - S[0][1] * S[1][0];
+        const double chi = det > 0 ? (r[0] * (S[1][1] * r[0] - S[0][1] * r[1]) + r[1] * (S[0][0] * r[1] - S[1][0] * r[0])) / det : 1e9;
+#ifndef __wasm__
+        if (std::getenv("SLAM_DUMP") && st_lm_rows < 60) std::fprintf(stderr, "LM f %d q %d res_px %.2f %.2f chi %.1f depth %.2f sdev_lm %.3f\n", frame_no, q, r[0] * fx, r[1] * fy, chi, pc[2], std::sqrt(PP(NI + 3 * q, NI + 3 * q)));
+#endif
+        if (chi > SLAM_GATE) { st_lm_gate++; if (++l.bad >= 3) slam_drop(q); continue; }
+        l.bad = 0;
+        for (int a = 0; a < 2 && nrows < MAX_ROWS; a++) {
+            rnnz[nrows] = 9; for (int i = 0; i < 9; i++) { ridx[nrows][i] = id[i]; rval[nrows][i] = Hr[a][i]; }
+            rs[nrows] = r[a]; Rd[nrows] = s2; nrows++; st_lm_rows++;
+        }
+    }
+    if (nrows > 0) ekf_update();
 }
 
 static void output(double* out) {
@@ -1330,8 +1665,11 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         return VIOBENCH_STATUS_OK;
     }
     M3 Rold = Rwi;
-    const double t_before = t_last;
+    const double t_before = t_last, p_old[3] = {pw[0], pw[1], pw[2]};
     propagate(imu, nimu);
+    if (LK_TPRED) {   // camera displacement over this frame, in the new camera's axes
+        const double dw[3] = {pw[0] - p_old[0], pw[1] - p_old[1], pw[2] - p_old[2]}; double di[3]; mtv(Rwi, dw, di); mv(Rci, di, tpred_c);
+    }
     if (t_last > t_before) frame_dt = t_last - t_before;
     // gyro rotation between frames, in camera axes: R_cnew_cold = Rci * (Rold^T Rnew)^T * Rci^T
     M3 dR = mmul(mtr(Rold), Rwi);
@@ -1340,6 +1678,18 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     { static Feat save[MAX_FEATS]; std::memcpy(save, feats, sizeof feats); track(Rcc); std::memcpy(feats, save, sizeof feats); }
 #endif
     track(Rcc);
+    if (SCHED) {   // committed work is known: cap this frame's update rows so that a minimum of detection still fits
+        const double committed = SC_BASE + SC_TRACK * frame_tracks;
+        int need = SC_MINCELLS;
+        if (SCHED >= 2) {   // protect detection: reserve the cells this frame will need (tracks lost), cap rows instead
+            int act = 0; for (int i = 0; i < MAX_FEATS; i++) act += feats[i].active;
+            need = (int)(SC_NEED_K * (MAX_FEATS - act)); if (need < SC_MINCELLS) need = SC_MINCELLS; if (need > DETECT_CELLS) need = DETECT_CELLS;
+        }
+        sched_need = need;
+        int rc = (int)((SCHED_B - committed - SC_CELL * need) / SC_ROW);
+        row_cap = rc < SC_MINROWS ? SC_MINROWS : (rc > MAX_ROWS ? MAX_ROWS : rc);
+        sched_used = committed;
+    }
     n_tried = n_ok = 0; frame_tri_fail = 0;
     // finished tracks: lost ones, and those spanning the whole window (the oldest clone leaves after this update)
     nrows = 0; ncand = 0;
@@ -1354,14 +1704,21 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     for (int i = 0; i < MAX_FEATS; i++) {
         Feat& f = feats[i];
         if (f.nobs == 0) continue;
-        if (!f.active) { queue_obs(f); f.nobs = 0; continue; }
+        if (!f.active) { if (LOST_DEFER) defer_obs(f); else queue_obs(f); f.nobs = 0; continue; }
+        if (STAGGER > 0 && is_kf && f.nobs >= N_CLONES - (i % (STAGGER + 1))) { queue_obs(f); f.nobs = 0; continue; }   // spread completions
         if (full && f.obs[0].serial == old) {
             if (f.nobs >= (TWO_RATE ? 3 : N_CLONES - 1)) { queue_obs(f); f.nobs = 0; }
             else { for (int o = 0; o + 1 < f.nobs; o++) f.obs[o] = f.obs[o + 1]; f.nobs--; }
         }
     }
     process_candidates(old);
+    for (int d = 0; d < ndef; d++) {   // lost tracks of this frame join the queue for the next one
+        Pending& c = dlist[d]; int k = 0; for (int o = 0; o < c.nobs; o++) if (c.obs[o].serial != old) c.obs[k++] = c.obs[o];
+        c.nobs = k; if (k >= 3 && npend < MAX_PENDING) pend[npend++] = c;
+    }
+    ndef = 0;
     frame_rows = nrows;
+    sched_used += SC_ROW * nrows;
 #if PROF_UPDATE
     { static double Ps[NMAX * NMAX]; std::memcpy(Ps, P, sizeof P); M3 R0 = Rwi; double s0[15]; for (int i = 0; i < 3; i++) { s0[i] = pw[i]; s0[3 + i] = vw[i]; s0[6 + i] = bg[i]; s0[9 + i] = ba[i]; s0[12 + i] = gw[i]; }
       static Clone cs[N_CLONES]; std::memcpy(cs, clones, sizeof clones); ekf_update();
@@ -1375,6 +1732,7 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         for (int i = 0; i < npend; i++) { Pending& c = pend[i]; int k = 0; for (int o = 0; o < c.nobs; o++) if (c.obs[o].serial != ts) c.obs[k++] = c.obs[o]; c.nobs = k; }
         drop_clone(thin);
     }
+    if (SLAM_N > 0 && frame_no % SLAM_EVERY == 0) slam_step();
     if (n_tried >= 3 && n_ok == 0) bad_streak++; else if (n_ok > 0) bad_streak = 0;
     {   // divergence check: triangulation success over the last RESET_WIN frames
         const int slot = frame_no % RESET_WIN;
@@ -1382,6 +1740,9 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         int c = 0, ok = 0; for (int i = 0; i < RESET_WIN; i++) { c += ring_c[i]; ok += ring_s[i]; }
         const double sp = std::sqrt(vw[0] * vw[0] + vw[1] * vw[1] + vw[2] * vw[2]);
         if ((c >= RESET_MIN && ok < RESET_RATE * c) || sp > VMAX) {
+            if (RESET_SOFT && sp <= VMAX) {   // soft: keep the window and the velocity, re-open the velocity uncertainty
+                for (int i = 0; i < 3; i++) PP(VE + i, VE + i) += SOFT_SIG * SOFT_SIG;
+            } else {
             double vc[3];
             const bool vis = RESET_VIS && visual_velocity(frame_dt, vc);
             if (vis) { double vi[3]; mtv(Rci, vc, vi); mv(Rwi, vi, vw); }
@@ -1391,8 +1752,10 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
             while (n_clones > 0) drop_oldest_clone();
             for (int i = 0; i < MAX_FEATS; i++) feats[i].nobs = 0;
             npend = 0;
+            for (int q = 0; q < SLAM_N; q++) if (lms[q].active) slam_drop(q);
+            }
             for (int i = 0; i < RESET_WIN; i++) ring_c[i] = ring_s[i] = 0;
-            n_resets++;
+            n_resets++; last_reset_frame = frame_no;
 #ifndef __wasm__
             if (std::getenv("MSCKF_RESETS")) std::fprintf(stderr, "reset f %d cand %d ok %d speed %.2f\n", frame_no, c, ok, sp);
 #endif
@@ -1427,7 +1790,8 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
             zupt_count++;
         }
     }
-    splat_step();
+    if (SCHED ? sched_used + SC_CELL * (SCHED >= 2 ? sched_need : 0) + SC_SPLAT <= SCHED_B : frame_rows <= SPL_SKIP_ROWS) { splat_step(); if (SCHED) sched_used += SC_SPLAT; }
+    if (MANHATTAN) manhattan_step();
     if (is_kf) add_clone();
     // record observations of the surviving tracks in the new clone, re-cut templates
     for (int i = 0; i < MAX_FEATS; i++) {
@@ -1436,8 +1800,8 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         cut_template(f);
 #endif
         if (!cut_template(f)) { f.active = false; continue; }
-        if (ANCHOR && (!f.anchored || f.nobs == 0)) cut_anchor(f);
-        if (is_kf && f.nobs < N_CLONES + 1) { f.obs[f.nobs].serial = frame_no; f.obs[f.nobs].u = (float)((f.x - cx) / fx); f.obs[f.nobs].v = (float)((f.y - cy) / fy); f.nobs++; }
+        if (ANCHOR && (!f.anchored || (f.nobs == 0 && !f.lm1))) cut_anchor(f);
+        if (is_kf && !f.lm1 && f.nobs < N_CLONES + 1) { f.obs[f.nobs].serial = frame_no; f.obs[f.nobs].u = (float)((f.x - cx) / fx); f.obs[f.nobs].v = (float)((f.y - cy) / fy); f.nobs++; }
     }
 #if PROF_DETECT
     { static Feat save[MAX_FEATS]; static int cs[GRID_X * GRID_Y]; std::memcpy(save, feats, sizeof feats); std::memcpy(cs, cool, sizeof cool); const int rr = det_rr;
@@ -1455,7 +1819,12 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     }
     output(out);
 #ifndef __wasm__
-    if (SPLAT && std::getenv("MSCKF_STATS") && frame_no == 1199) std::fprintf(stderr, "splats %d tries %ld hits %ld | late: made %ld hits %ld rejected smax %ld view %ld\n", n_splats, spl_try, spl_hit, spl_late_made, spl_late_hit, spl_late_smax, spl_late_view);
+    if (std::getenv("MSCKF_FRAMESTATS")) {
+        static long pc = 0, pcell = 0, ptr = 0, pst = 0; static int pres = 0;
+        std::fprintf(stderr, "FS %d tri %ld cells %ld tracks %ld rows %d resets %d pend %d nst %d splat_try %ld\n", frame_no, st_cand - pc, st_cells - pcell, st_tracks - ptr, frame_rows, n_resets - pres, npend, n_state, spl_try - pst);
+        pc = st_cand; pcell = st_cells; ptr = st_tracks; pres = n_resets; pst = spl_try;
+    }
+    if (SPLAT && std::getenv("MSCKF_STATS") && frame_no == 1199) std::fprintf(stderr, "slam init %ld rows %ld gated %ld | manhattan updates %ld | splats %d tries %ld hits %ld | late: made %ld hits %ld rejected smax %ld view %ld\n", st_lm_init, st_lm_rows, st_lm_gate, st_mh_upd, n_splats, spl_try, spl_hit, spl_late_made, spl_late_hit, spl_late_smax, spl_late_view);
     if (std::getenv("MSCKF_STATS") && frame_no == 1199) std::fprintf(stderr, "cand %ld tri_fail %ld (parallax %ld reproj %ld) chi_rej %ld ok %ld far %ld resets %d cells/frame %.1f tracks/frame %.1f\n", st_cand, st_tri, st_par, st_rep, st_chi, st_ok, st_far, n_resets, st_cells / 1200.0, st_tracks / 1200.0);
     if (std::getenv("MSCKF_DEBUG") && frame_no % (std::getenv("MSCKF_EVERY") ? atoi(std::getenv("MSCKF_EVERY")) : 10) == 0) {
         int na = 0; for (int i = 0; i < MAX_FEATS; i++) na += feats[i].active;
@@ -1467,3 +1836,5 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     return VIOBENCH_STATUS_OK;
 }
 }
+
+extern "C" int32_t msckf_frames_since_reset(void) { return frame_no - last_reset_frame; }   // router health signal
