@@ -105,3 +105,9 @@ for lite in (0, 1):
 # ===== Recommended after the harder server set (selected on dev levels, checked on held-out levels) =====
 VARIANTS['vio_robust'] = VARIANTS['robust_soft']
 VARIANTS['vio_robust_lite'] = VARIANTS['lite_robust_soft']
+VARIANTS['learned_lin'] = dict(wasm='wasm/learned_lin.wasm')   # speed-aware linear multipliers (learned/lin)
+VARIANTS['msckf'] = dict(wasm='wasm/msckf.wasm')   # OpenVINS-style MSCKF, written from scratch (msckf/)
+VARIANTS['msckf_v2'] = dict(wasm='wasm/msckf_v2.wasm')               # msckf with fuel optimizations (same accuracy)
+VARIANTS['msckf_splat_v2'] = dict(wasm='wasm/msckf_splat_v2.wasm')   # msckf_v2 + Gaussian-splat map (-DSPLAT=1)
+VARIANTS['router'] = dict(wasm='wasm/router.wasm')                   # msckf_splat_v2 + learned_lin, blended by speed regime (router/)
+VARIANTS['router_lite'] = dict(wasm='wasm/router_lite.wasm')         # router with PR=3, MAX_ROWS=20, DETECT_CELLS=16 (~2/3 fuel)

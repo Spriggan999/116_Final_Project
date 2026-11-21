@@ -8,6 +8,46 @@ behind a compile-time flag whose default reproduces v8 exactly. Inference is C++
 compiled to WASM. Python is used only offline, for data generation, analysis and
 training.
 
+## New models (2026-11-20): MSCKF, Gaussian-splat map, router
+
+Final comparison on 144 test flights; unaligned ATE in m, host replay. The official sandbox gives the same numbers
+on every set it was run on.
+
+- **Agile (128):** agile-hard/xfast-test, fresh-hard/xfast (houses 120-137), and test2-hard/xfast (houses 80-95,
+  generated after all model choices, untouched).
+- **Normal held-out (16):** start hover, slow flights.
+- **Selection** used only the dev and training flights.
+
+| Model | Agile 128 | Normal held-out 16 | All 144 (mean / median) | Better than v9_adapted on | Max fuel/frame |
+|---|---:|---:|---:|---:|---:|
+| v9_adapted | 2.072 | 1.246 | 1.980 / 1.830 | | 88.6k |
+| learned_lin | 1.858 | **1.234** | 1.788 / 1.614 | | 88.6k |
+| learned_lin + splat (`splat.wasm`) | 1.580 | 1.207 | 1.539 / 1.398 | | 274k |
+| OpenVINS-style MSCKF core only | 77.99 (a few flights diverge) | 2.512 | 69.6 / 0.638 | | ~5.4M |
+| + divergence recovery | 1.481 | 2.174 | 1.558 / 0.686 | | ~5.4M |
+| + weak velocity prior (`msckf_v2.wasm`) | 0.820 | 1.775 | 0.926 / 0.533 | | 5.37M |
+| + Gaussian-splat map (`msckf_splat_v2.wasm`) | 0.735 | 1.625 | 0.834 / 0.434 | | 5.72M |
+| **router** (`router.wasm`: msckf_splat + learned_lin by speed regime) | **0.735** | 1.452 | **0.815 / 0.434** | **127/144** | 5.77M |
+| router_lite (`router_lite.wasm`: 7x7 patches, 20 rows, 16 detection cells) | 0.730 | 1.639 | 0.831 / 0.528 | 128/144 | 3.89M |
+
+Paired comparisons for the router:
+
+| Compared with | Difference over all 144 | se | Better on | Normal held-out | Agile flights |
+|---|---:|---:|---:|---:|---|
+| v9_adapted | -1.165 m | 0.097 | 127/144 | +0.21 m (8/16 better) | -1.1 to -1.7 m on every set |
+| msckf_splat | -0.019 m | 0.006 | | -0.173 m (se 0.040, 15/16 better) | identical |
+
+Fuel is the official-sandbox maximum per frame over 48 episodes (agile-hard-test, agile-xfast-test, heldout). The
+MSCKF models are about 60 times more expensive per frame than learned_lin and v9_adapted.
+
+Details: `msckf/README.md`, `msckf_splat/README.md`, `splat/README.md`, `router/README.md`. Paired host evaluation:
+`hosttools/hosteval.py`.
+
+Tried and not adopted:
+- First-estimate Jacobians; motion keyframes; a two-rate window; anchored KLT; growing the splat map; rotation-only
+  rows from low-parallax tracks; a percentile stillness test; a speed-adaptive velocity prior.
+- IMU input filters (trapezoidal, low-pass) and image smoothing before tracking: neutral or worse.
+
 ## What to submit
 
 | Binary (`wasm/`) | Use | Max fuel/frame |
