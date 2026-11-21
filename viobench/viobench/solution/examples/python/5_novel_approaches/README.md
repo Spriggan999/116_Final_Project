@@ -232,6 +232,7 @@ All of these are in `variants.py`.
 | `estimator/solution.cpp` | v8 copy with all new flags; defaults reproduce v8 |
 | `estimator/velocity_prior_weights.{h,json}` | Learned-prior weights (experimental `VEL_PRIOR=1` only) |
 | `imu_cruise/solution.cpp` | IMU-only experiment |
+| `lqg/` | LQG observer + LQR IMU-correction controller: `lqg/vision` (with v8's tracker) and `lqg/imu` (IMU only); see `lqg/README.md` |
 | `variants.py` | Every variant (source plus `-D` flags); recommended names `vio_robust`, `vio_robust_lite` at the end |
 | `evaluate.py` | Builds variants, runs episodes in parallel through the official runner, caches per episode, prints tables |
 | `data/generate.py` | Collector training flights (raw 200 Hz IMU and state) for the velocity prior |

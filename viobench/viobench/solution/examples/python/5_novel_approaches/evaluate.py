@@ -34,6 +34,10 @@ def episode_sources(name):
 def build(name, spec, directory):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory/f'{name}.wasm'
+    if 'wasm' in spec:   # prebuilt binary (e.g. another directory's submission): copied, not rebuilt
+        import shutil
+        shutil.copyfile(HERE/spec['wasm'], path)
+        return path
     flags = [f'-D{k}={v}' for k, v in spec.get('defines', {}).items()]
     command = [str(WORKSPACE/'build/toolchain/wasi-sdk/bin/clang++'), '-O2', '-msimd128', '-fno-exceptions',
                '-I'+str(WORKSPACE/'runtime/native'), *flags, str(HERE/spec['source']),

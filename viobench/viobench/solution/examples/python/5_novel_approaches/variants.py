@@ -105,7 +105,83 @@ for lite in (0, 1):
 # ===== Recommended after the harder server set (selected on dev levels, checked on held-out levels) =====
 VARIANTS['vio_robust'] = VARIANTS['robust_soft']
 VARIANTS['vio_robust_lite'] = VARIANTS['lite_robust_soft']
+
+# ===== LQG observer + LQR IMU-correction controller (lqg/solution.cpp; see lqg/README.md) =====
+_rob = VARIANTS['vio_robust']['defines']
+VARIANTS['lqg_v8check'] = dict(source='lqg/solution.cpp', defines=dict(LQG=0))          # must equal 'base'
+# vision (v8 corner tracker)
+VARIANTS['lqg_vision'] = dict(source='lqg/solution.cpp')
+VARIANTS['lqg_vision_jump'] = dict(source='lqg/solution.cpp', defines=dict(LQR_TAU=0))  # corrections at once (no LQR)
+VARIANTS['lqg_vision_thrust'] = dict(source='lqg/solution.cpp', defines=dict(THRUST_ONLY=1))
+VARIANTS['lqg_vision_robust'] = dict(source='lqg/solution.cpp', defines=dict(_rob))
+VARIANTS['lqg_vision_robust_thrust'] = dict(source='lqg/solution.cpp', defines=dict(_rob, THRUST_ONLY=1))
+# IMU only (no image access)
+_cru = VARIANTS['cruise_att_x1.5']['defines']
+VARIANTS['lqg_imu'] = dict(source='lqg/solution.cpp', defines=dict(_cru, LQG_VISION=0, THRUST_ONLY=1))
+VARIANTS['lqg_imu_allaccel'] = dict(source='lqg/solution.cpp', defines=dict(_cru, LQG_VISION=0))
+VARIANTS['lqg_imu_still'] = dict(source='lqg/solution.cpp', defines=dict(LQG_VISION=0, THRUST_ONLY=1))   # zero-velocity prior
+VARIANTS['lqg_imu_calib'] = dict(source='lqg/solution.cpp', defines=dict(_cru, LQG_VISION=0, THRUST_ONLY=1,
+                                                                          CALIB_SECONDS=0.97, CALIB_ACCEL_BIAS=1))
+_lv = dict(_rob, THRUST_ONLY=1)
+VARIANTS['lqg_vision_trans'] = dict(source='lqg/solution.cpp', defines=dict(_lv, LQG_DIR_STATES=1))
+VARIANTS['lqg_vision_mix'] = dict(source='lqg/solution.cpp', defines=dict(_lv, LQG_MIX_DIRS=1))
+VARIANTS['lqg_vision_trans_mix'] = dict(source='lqg/solution.cpp', defines=dict(_lv, LQG_DIR_STATES=1, LQG_MIX_DIRS=1))
+VARIANTS['lqg_vision_nospeed'] = dict(source='lqg/solution.cpp', defines=dict(_lv, USE_PAR_SPEED=0))
+# prior rows spread over 3 frames (IMU only; LQG_PRIOR_SPLIT defaults on without vision)
+_cal = dict(CALIB_SECONDS=0.97, CALIB_ACCEL_BIAS=1)
+VARIANTS['lqg_imu_split'] = dict(source='lqg/solution.cpp', defines=dict(_cru, LQG_VISION=0, THRUST_ONLY=1))
+VARIANTS['lqg_imu_calib_split'] = dict(source='lqg/solution.cpp', defines=dict(_cru, **_cal, LQG_VISION=0, THRUST_ONLY=1))
+VARIANTS['lqg_vision_mix_calib'] = dict(source='lqg/solution.cpp', defines=dict(_lv, **_cal, LQG_MIX_DIRS=1))
+VARIANTS['lqg_vision_mix_jump'] = dict(source='lqg/solution.cpp', defines=dict(_lv, LQG_MIX_DIRS=1, LQR_TAU=0))
+VARIANTS['lqg_vision_mix_lite'] = dict(source='lqg/solution.cpp', defines=dict(_lv, LQG_MIX_DIRS=1, VIO_LITE=1))
+VARIANTS['lqg_vision_mix_lite_calib'] = dict(source='lqg/solution.cpp', defines=dict(_lv, **_cal, LQG_MIX_DIRS=1, VIO_LITE=1))
+# all accelerometer axes (wind is an external force the accelerometer measures; thrust-only is wrong in wind)
+_lva = dict(_rob)
+VARIANTS['lqg_vision_mix_allacc'] = dict(source='lqg/solution.cpp', defines=dict(_lva, LQG_MIX_DIRS=1))
+VARIANTS['lqg_vision_mix_calib_allacc'] = dict(source='lqg/solution.cpp', defines=dict(_lva, **_cal, LQG_MIX_DIRS=1))
+VARIANTS['lqg_imu_calib_allacc'] = dict(source='lqg/solution.cpp', defines=dict(_cru, **_cal, LQG_VISION=0))
+VARIANTS['lqg_imu_wind'] = dict(source='lqg/solution.cpp', defines=dict(_cru, **_cal, LQG_VISION=0, LQG_WIND_HI=2.6, VP_STILL_SIG=0.25))
+# tilt-aware mapping of the design covariance (a wind-stalled drone hovers tilted ~0.2-0.3 rad)
+_vfin = dict(_rob, **_cal, LQG_MIX_DIRS=1, LQG_TILT_ROT=1)
+VARIANTS['lqg_vision_tilt'] = dict(source='lqg/solution.cpp', defines=dict(_vfin))
+VARIANTS['lqg_vision_tilt_wind'] = dict(source='lqg/solution.cpp', defines=dict(_vfin, LQG_WIND_HI=2.6))
+VARIANTS['lqg_imu_wind_tilt'] = dict(source='lqg/solution.cpp', defines=dict(_cru, **_cal, LQG_VISION=0, LQG_WIND_HI=2.6,
+                                                                              VP_STILL_SIG=0.25, LQG_TILT_ROT=1))
+# gain scheduling: moving / hovering designs switched by the vision stall detector
+VARIANTS['lqg_vision_sched'] = dict(source='lqg/solution.cpp', defines=dict(_vfin, LQG_SCHED=1))
+VARIANTS['lqg_vision_sched_wind'] = dict(source='lqg/solution.cpp', defines=dict(_vfin, LQG_SCHED=1, LQG_WIND_HI=2.6))
+
+# ===== LQG picks (selected on dev + windy-dev; reported on held-out) =====
+VARIANTS['lqg_vision_final'] = VARIANTS['lqg_vision_tilt_wind']   # v8 corner tracker + LQG observer + LQR IMU corrections
+VARIANTS['lqg_imu_final'] = VARIANTS['lqg_imu_wind_tilt']         # IMU only, no image access
+
+# ===== Adaptive LQG: moving start (no hover / rest assumption), no cruise-speed habit, tunables as in-flight priors =====
+_mv = dict(CALIB_SECONDS=0.0, REST_GYRO_MEAN=0.0, SIG_BG0_MOVING=0.05, VPRIOR_SIG=1.0, VPRIOR_REL=0.5,
+           LQG_MIX_DIRS=1, LQG_TILT_ROT=1, VMAX_RESET=8.0)
+_ad = dict(LQG_SCHED_WIN=20, LQG_ADAPT=0.1, LQG_STILL_CAL=1)
+VARIANTS['ekf_move'] = dict(source='lqg/solution.cpp', defines=dict(_mv, LQG=0))                 # same settings, v8 EKF
+VARIANTS['lqga_base'] = dict(source='lqg/solution.cpp', defines=dict(_mv))
+VARIANTS['lqga_sched'] = dict(source='lqg/solution.cpp', defines=dict(_mv, LQG_SCHED_WIN=20))   # start-up gain schedule
+VARIANTS['lqga_adapt'] = dict(source='lqg/solution.cpp', defines=dict(_mv, LQG_ADAPT=0.1))      # innovation-adaptive gains
+VARIANTS['lqga_still'] = dict(source='lqg/solution.cpp', defines=dict(_mv, LQG_STILL_CAL=1))    # motion-gated calibration
+VARIANTS['lqga_all'] = dict(source='lqg/solution.cpp', defines=dict(_mv, **_ad))
+VARIANTS['lqga_all_par25'] = dict(source='lqg/solution.cpp', defines=dict(_mv, **_ad, PAR_SPEED=2.5))
+VARIANTS['lqga_all_thrust'] = dict(source='lqg/solution.cpp', defines=dict(_mv, **_ad, THRUST_ONLY=1))
+VARIANTS['lqga_imu'] = dict(source='lqg/solution.cpp', defines=dict(_mv, **_ad, LQG_VISION=0))
+# Stage-2 submissions (6_stage2_movestart), prebuilt
+VARIANTS['v9'] = dict(wasm='../wasm/stage2_tracker_v2.wasm')
+VARIANTS['v9_nn'] = dict(wasm='../wasm/stage2_movestart_nn.wasm')
+VARIANTS['v9_adapt'] = dict(wasm='../wasm/stage2_adapt.wasm')
+# Learned noise multipliers on a copy of v9_adapted (learned/): RL policy search and supervised version
+VARIANTS['learned_rl'] = dict(wasm='wasm/learned_rl.wasm')
+VARIANTS['learned_sl'] = dict(wasm='wasm/learned_sl.wasm')
+VARIANTS['learned_static'] = dict(wasm='wasm/learned_static.wasm')   # 7 constant multipliers (headroom check)
+VARIANTS['learned_sl2'] = dict(wasm='wasm/learned_sl2.wasm')       # SL retrained without prior rows
+VARIANTS['learned_combo'] = dict(wasm='wasm/learned_combo.wasm')   # sl2 + static rotation / accelerometer multipliers
 VARIANTS['learned_lin'] = dict(wasm='wasm/learned_lin.wasm')   # speed-aware linear multipliers (learned/lin)
+VARIANTS['splat'] = dict(wasm='wasm/splat.wasm')   # learned_lin + Gaussian-splat map relocalization (splat/)
+VARIANTS['splat_lite'] = dict(wasm='wasm/splat_lite.wasm')   # cheaper splat: one 20 px search per frame, 8x8 signature
+VARIANTS['splat_lite_rt'] = dict(wasm='wasm/splat_lite_rt.wasm')   # splat_lite + multipliers retuned with CMA-ES (splat/lite_rt)
 VARIANTS['msckf'] = dict(wasm='wasm/msckf.wasm')   # OpenVINS-style MSCKF, written from scratch (msckf/)
 VARIANTS['msckf_v2'] = dict(wasm='wasm/msckf_v2.wasm')               # msckf with fuel optimizations (same accuracy)
 VARIANTS['msckf_splat_v2'] = dict(wasm='wasm/msckf_splat_v2.wasm')   # msckf_v2 + Gaussian-splat map (-DSPLAT=1)
