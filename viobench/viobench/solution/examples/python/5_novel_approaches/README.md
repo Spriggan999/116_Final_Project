@@ -8,6 +8,36 @@ behind a compile-time flag whose default reproduces v8 exactly. Inference is C++
 compiled to WASM. Python is used only offline, for data generation, analysis and
 training.
 
+## New model (2026-11-21): vins, a VINS-Mono-style sliding-window optimizer
+
+`vins/` (binary `wasm/vins.wasm`): keyframe window of 11 frames, IMU preintegration, anchored inverse-depth features,
+Gauss-Newton with two-way marginalization, plus a relocalization map. Same 144 test flights as below, host replay
+(sandbox identical):
+
+| Model | Agile 128 | Normal held-out 16 | All 144 (mean / median) | Better than router_dpn on | Max fuel/frame |
+|---|---:|---:|---:|---:|---:|
+| router_dpn | 0.709 | 1.272 | 0.772 / | | 3.24M |
+| **vins** | **0.359** | **0.604** | **0.387 / 0.256** | **127/144** | 6.11M |
+| vins_lite (`-DPRESET=1`) | 0.435 | 0.666 | 0.461 / 0.292 | 119/144 | 3.20M |
+| vins_ultra (`-DPRESET=2`) | 0.510 | 0.706 | 0.532 / 0.340 | 99/144 | 2.03M |
+| vins_pipe (solve every second frame, scheduled) | 0.313 | 0.726 | 0.359 / 0.251 | 132/144 | 2.70M |
+| vins_pipe_fixed (`-DPIPE=2`) | 0.318 | 0.729 | 0.364 / 0.241 | 122/144 | 3.77M |
+| vins_edge (`-DEDGE=1 -DEDGE_WHEN=16`) | 0.300 | 0.541 | 0.327 / 0.227 | 134/144 | 6.46M |
+| vins_pipe_edge (vins_pipe + edgelets) | 0.303 | 0.601 | 0.336 / 0.252 | 128/144 | 2.79M |
+
+Estimated claimed area: vins about 4.9%, vins_lite 4.8%, vins_ultra 4.6% (router_dpn about 3.05%); the three VINS
+points together about 5.6%. Details, the changes from the paper and the rejected ideas: `vins/README.md`.
+
+vins_pipe (added later on 2026-11-21) runs the same estimator but spreads each solve over two frames with a
+cost-model scheduler: worst frame 2.70M at the same accuracy on these flights, about 5.7% alone. It is worse on the
+simulator's extreme level (0.80 -> 1.08-1.23 on 32 flights), where vins keeps more area. Build flags and the
+scheduler: `vins/README.md`, section "Pipelined solve".
+
+Edgelets (line features after PL-VINS / MLINE-VINS, `-DEDGE=1`): points on the faint edges of untextured rendered
+walls, tracked along the edge normal, one residual across the edge. They help on every flight type and level (windy
+0.39 -> 0.30, noisy 0.79 -> 0.51 for vins; extreme 1.15 -> 0.90 for vins_pipe). vins_pipe_edge is the best single
+point on these flights (about 5.9%); vins_edge is the best on the extreme level. `vins/README.md`, section "Edgelets".
+
 ## New models (2026-11-20): MSCKF, Gaussian-splat map, router
 
 Final comparison on 144 test flights; unaligned ATE in m, host replay. The official sandbox gives the same numbers

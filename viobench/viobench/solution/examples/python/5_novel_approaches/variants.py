@@ -192,3 +192,10 @@ VARIANTS['router_dp'] = dict(wasm='wasm/router_dp.wasm')             # router_li
 VARIANTS['router_dp2'] = dict(wasm='wasm/router_dp2.wasm')           # router_dp + learned_lin blended up to 0.65 m/s running speed (RT_HI=0.65)
 VARIANTS['router_dpn'] = dict(wasm='wasm/router_dpn.wasm')           # router_dp + online IMU noise level (IMU_EST) + reset velocity cap (RESET_VCAP_K=2)
 VARIANTS['router_dp2n'] = dict(wasm='wasm/router_dp2n.wasm')         # router_dp2 + the same robustness additions
+VARIANTS['vins'] = dict(wasm='wasm/vins.wasm')                       # VINS-Mono-style sliding-window optimizer + relocalization map (vins/)
+VARIANTS['vins_lite'] = dict(wasm='wasm/vins_lite.wasm')             # vins -DPRESET=1: 6-frame window, 24 tracks (3.4M fuel)
+VARIANTS['vins_ultra'] = dict(wasm='wasm/vins_ultra.wasm')           # vins -DPRESET=2: 5-frame window, 20 tracks, 1 map search per frame (2.35M fuel)
+VARIANTS['vins_pipe'] = dict(wasm='wasm/vins_pipe.wasm')             # vins -DPIPE=2 -DPIPE_SCHED=2 -DPIPE_MAX=3 -DPIPE_DET=1 -DPIPE_CAP=2.6e6: solve over two frames, scheduled (2.70M fuel)
+VARIANTS['vins_pipe_fixed'] = dict(wasm='wasm/vins_pipe_fixed.wasm') # vins -DPIPE=2: solve over two frames, fixed split (3.77M fuel)
+VARIANTS['vins_edge'] = dict(wasm='wasm/vins_edge.wasm')             # vins -DEDGE=1 -DEDGE_WHEN=16: edgelets (line features) when corners are scarce (6.46M fuel)
+VARIANTS['vins_pipe_edge'] = dict(wasm='wasm/vins_pipe_edge.wasm')   # vins_pipe flags + -DEDGE=1 -DEDGE_WHEN=16 (2.79M fuel)

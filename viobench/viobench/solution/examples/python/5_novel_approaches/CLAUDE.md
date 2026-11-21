@@ -6,6 +6,8 @@ Notes for agents working in this folder. Read `README.md` here for results; this
 
 | Folder | What it is |
 |---|---|
+| `vins/` | VINS-Mono-style sliding-window optimizer (keyframe window, preintegration, Schur'ed inverse-depth features, two-way marginalization) + relocalization map (`vmap.inc`). Defaults = the chosen build (`wasm/vins.wasm`). `build_host.sh` makes `host_vins_NAME`. |
+| `router_vins/` | Router with vins in place of the MSCKF (experiment; not better than vins alone). |
 | `msckf/` | From-scratch OpenVINS-style MSCKF in one file (`solution.cpp`), optional Gaussian-splat map (`-DSPLAT=1`, `splat_map.inc`). Every setting is a `-D` flag at the top of the file; defaults reproduce the `msckf_v2` build. |
 | `router/` | Runs the MSCKF (+ splat map) and learned_lin side by side and blends their position steps by the MSCKF's running speed. `router_lite` = `-DPR=3 -DMAX_ROWS=20 -DDETECT_CELLS=16`. The current recommended submission. |
 | `learned/` | learned_lin source (v9_adapted + 21 learned noise multipliers). The router compiles it as its second estimator, so it must stay. `LEARN=0` reproduces v9_adapted exactly. |
