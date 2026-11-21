@@ -190,3 +190,5 @@ VARIANTS['router_lite'] = dict(wasm='wasm/router_lite.wasm')         # router wi
 VARIANTS['router_lite2'] = dict(wasm='wasm/router_lite2.wasm')       # router_lite + sparse detection, splat-search skipping, speed-aware safeguards, growing splat map
 VARIANTS['router_dp'] = dict(wasm='wasm/router_dp.wasm')             # router_lite2 + depth-based scale prior on slow flights (DP)
 VARIANTS['router_dp2'] = dict(wasm='wasm/router_dp2.wasm')           # router_dp + learned_lin blended up to 0.65 m/s running speed (RT_HI=0.65)
+VARIANTS['router_dpn'] = dict(wasm='wasm/router_dpn.wasm')           # router_dp + online IMU noise level (IMU_EST) + reset velocity cap (RESET_VCAP_K=2)
+VARIANTS['router_dp2n'] = dict(wasm='wasm/router_dp2n.wasm')         # router_dp2 + the same robustness additions

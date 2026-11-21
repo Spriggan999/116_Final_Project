@@ -34,6 +34,15 @@
 #ifndef RT_WMIN
 #define RT_WMIN 0.5
 #endif
+#ifndef RT_LOWTR
+#define RT_LOWTR 0     // >0: while the MSCKF has fewer active tracks than this (and RT_LOWHOLD frames after), cap its weight
+#endif
+#ifndef RT_WLOW
+#define RT_WLOW 0.5
+#endif
+#ifndef RT_LOWHOLD
+#define RT_LOWHOLD 20
+#endif
 #ifndef RT_VCAP
 #define RT_VCAP 0.0    // m/s: >0 caps the output position step at this speed (an MSCKF update can teleport the position)
 #endif
@@ -45,7 +54,7 @@
 #endif
 extern "C" {
 int32_t msckf_init(const char*, uint32_t); int32_t msckf_step(double, const uint8_t*, const double*, int32_t, double*);
-int32_t msckf_frames_since_reset(void);
+int32_t msckf_frames_since_reset(void); int32_t msckf_active_tracks(void);
 int32_t lin_init(const char*, uint32_t);   int32_t lin_step(double, const uint8_t*, const double*, int32_t, double*);
 }
 static double pa_prev[3], pb_prev[3], pout[3], vrun = RT_V0, t_prev = 0, w_last = 1;
@@ -74,7 +83,10 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         const double w = RT_WMIN + (RT_WMAX - RT_WMIN) * x;
         const double wr = msckf_frames_since_reset() < RT_RESET_FR ? RT_WRESET : 1.0;   // just reset: lean on learned_lin
         w_last = w;
-        const double wu = w < wr ? w : wr;
+        static int low_left = 0;
+        if (RT_LOWTR > 0) { if (msckf_active_tracks() < RT_LOWTR) low_left = RT_LOWHOLD + 1; if (low_left > 0) low_left--; }
+        double wu = w < wr ? w : wr;
+        if (RT_LOWTR > 0 && low_left > 0 && wu > RT_WLOW) wu = RT_WLOW;
         double st[3], s2 = 0;
         for (int i = 0; i < 3; i++) { st[i] = RT_SHRINK * (wu * da[i] + (1 - wu) * db[i]); s2 += st[i] * st[i]; }
         if (RT_VCAP > 0 && dt > 1e-4) {

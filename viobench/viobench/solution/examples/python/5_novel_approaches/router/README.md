@@ -266,3 +266,53 @@ Tried in the same round, not adopted:
 | Depth prior also below 0.1 m/s filter speed (`DP_VMIN` 0.03 / 0.05), or only above 0.15 | -0.002 to +0.04 m |
 | Veto the zero-velocity update when the IMU-only velocity change over 0.5-1 s is large (`ZV_ACC`) | +0.11 to +0.22 m: too noisy to tell takeoff from hover |
 | More clones (13, 15), 7 observations per track, 24 rows, 40 features, 9x9 patches | +0.09 to +0.37 m on selection |
+
+## router_dpn / router_dp2n: robustness additions (`../wasm/router_dpn.wasm`, `../wasm/router_dp2n.wasm`)
+
+Build: router_dp's (or router_dp2's) flags plus `-DIMU_EST=1 -DIMU_EST_TH=1.5 -DIMU_EST_BIAS=1 -DRESET_VCAP_K=2`.
+
+**Online IMU noise level (`IMU_EST`, `IMU_EST_TH`, `IMU_EST_BIAS`).** With 2-3x the nominal IMU noise the MSCKF
+trusts the IMU too much and degrades badly. At 200 Hz the true signal barely changes between samples, so the variance
+of successive-sample differences is twice the white-noise variance; on the local flights the estimate is exact
+(accelerometer 0.278 vs 0.28 m/s^2, gyro 0.070 vs 0.07 rad/s). It starts from the nominal value with a 200-sample
+prior weight, is clamped to 0.5-5x nominal, and is only used when it exceeds 1.5x nominal: without that threshold the
+tiny estimation differences perturbed nominal flights chaotically (+0.05 m selection, +0.16 m test). After 100
+samples, if the IMU is k times noisier, the initial bias sigmas are widened by k too (in these levels bias and noise
+scale together). On nominal flights all of this is bit-identical to router_dp.
+
+**Cap on the velocity guess after a divergence reset (`RESET_VCAP_K=2`).** The reset restarts the velocity from a
+visual guess. On one fast flight that guess was 5.4 m/s against a true 0.2-0.5 m/s, under the 6 m/s divergence limit,
+and the position ran away by 17 m. The guess is now capped at max(1 m/s, 2 x the flight's RMS speed). It changes
+only a few flights: selection -0.015 m (5 of 176 flights changed), test 8 flights better and 1 worse (a flight that
+diverges early either way).
+
+**Results.** Official sandbox ATE (m); 16 flights per level; the hard levels use 2-3x IMU noise and bias, wind and
+faster flight (see `../data/simulate_hard.py`):
+
+| | router_lite2 | router_dp | router_dpn | router_dp2n |
+|---|---:|---:|---:|---:|
+| Test (144 flights, host replay) | 0.820 | 0.804 | **0.772** | **0.765** |
+| Selection (176 flights) | 0.814 | 0.771 | 0.756 | 0.739 |
+| noisy level (dev) | 2.424 | 2.483 | 1.369 | 1.319 |
+| fast level (dev) | 0.708 | 0.859 | 0.700 | 0.725 |
+| faster level (dev) | 0.532 | | 0.527 | 0.557 |
+| **hard level, held-out** | 2.481 | | 1.951 | 1.906 |
+| **extreme level, held-out** | 5.623 | | 1.924 | 1.923 |
+| **windy level, held-out** | 1.539 | | 1.476 | 1.423 |
+| Max fuel, 48 standard episodes | 3.27M | 3.27M | 3.27M | 3.27M |
+
+The adaptation settings were chosen on the dev levels and the selection flights; the held-out levels and the test
+flights were run once per candidate. Estimated claimed area: router_dpn about 3.05%, router_dp2n about 3.08%, against
+2.85% for router_lite2. router_dp2n leans more on learned_lin at medium speeds (slightly worse on the fast levels and
+the agile test sets, better on slow and windy flights).
+
+Also tried in this round, not adopted:
+
+| Change | Result |
+|---|---|
+| Vision every second frame only (`VIS_EVERY=2`; first step to splitting work over two frames) | 0.77 -> 1.70 m |
+| Tighter splat gate (chi^2 9.21 / 5.99) or a cap on how far one splat match may move the position (`SPL_DXMAX`) | -0.00 to +0.01 m: fixes one failure, causes another |
+| Average of several near-identical variants (ensemble) | at most -0.006 m, for 2x fuel |
+| Cap the MSCKF weight while it has few tracks (`RT_LOWTR`) | -0.002 to +0.05 m |
+| IMU noise estimate without the threshold | see above |
+| Depth prior also off above 0.6 / 0.8 m/s instantaneous speed (`DP_VMAX`) | did not fix the fast-level regression (the reset cap did) |

@@ -67,6 +67,9 @@
 #ifndef SPL_DRATIO
 #define SPL_DRATIO 2.0
 #endif
+#ifndef SPL_DXMAX
+#define SPL_DXMAX 0.0           // m: >0 rejects a splat update that would move the position more than this
+#endif
 #ifndef SPL_GATE
 #define SPL_GATE 13.8           // 2-dof chi^2 (99.9%)
 #endif
@@ -552,7 +555,9 @@ static void splat_step() {
         if (!used[j]) continue;
         splat_rows(scand[j], agree ? 1.0 : SPL_SOFT); dg_cons_acc++; dg_cons_good += scand[j].good;
     }
+    upd_dxmax = SPL_DXMAX;
     if (nrows > 0) ekf_update();
+    upd_dxmax = 0;
     for (int j = 0; j < ncand_s; j++) {
         if (!used[j]) continue;
         Splat& sp = splats[scand[j].k];

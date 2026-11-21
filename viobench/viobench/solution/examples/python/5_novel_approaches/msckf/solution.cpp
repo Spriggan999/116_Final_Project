@@ -315,6 +315,33 @@ typedef double upd_t;
 #ifndef ZV_ACC_N
 #define ZV_ACC_N 20
 #endif
+#ifndef VIS_EVERY
+#define VIS_EVERY 1              // vision (tracking, updates, detection) only every VIS_EVERY-th frame; IMU every frame
+#endif
+#ifndef IMU_EST
+#define IMU_EST 0                // 1: IMU white-noise levels estimated online from successive-sample differences (var(d) = 2 sigma^2)
+#endif
+#ifndef IMU_EST_N0
+#define IMU_EST_N0 200           // prior weight (samples) of the nominal SIG_ACC / SIG_GYR
+#endif
+#ifndef IMU_EST_TH
+#define IMU_EST_TH 0.0           // >0: keep the nominal noise unless the estimate exceeds IMU_EST_TH x nominal (sigma)
+#endif
+#ifndef IMU_EST_BIAS
+#define IMU_EST_BIAS 0           // 1: once (after IMU_EST_BN samples) a noisy IMU is detected, widen the bias sigmas by the same factor
+#endif
+#ifndef IMU_EST_BN
+#define IMU_EST_BN 100
+#endif
+#ifndef IMU_EST_MAX
+#define IMU_EST_MAX 5.0          // estimate clamped to [1/2, IMU_EST_MAX] x nominal
+#endif
+#ifndef RESET_VCAP_K
+#define RESET_VCAP_K 0.0         // >0: the visual velocity guess after a reset is capped at max(RESET_VCAP_MIN, K x the flight's RMS speed)
+#endif
+#ifndef RESET_VCAP_MIN
+#define RESET_VCAP_MIN 1.0
+#endif
 #ifndef LP_ZV
 #define LP_ZV 0                  // >0: rotation-only rows only within LP_ZV frames of a zero-velocity update (vision says still)
 #endif
@@ -503,7 +530,7 @@ struct Pending { int nobs; int fidx; Obs obs[N_CLONES + 1]; };
 #endif
 static Pending pend[MAX_PENDING]; static int npend = 0;
 static int det_rr = 0;
-static bool is_kf = true;
+static bool is_kf = true; static M3 R_vis;
 static int cool[GRID_X * GRID_Y];
 static int n_tried = 0, n_ok = 0, bad_streak = 0;
 static double depth_avg = 2.5, frame_dt = 0.05;
@@ -796,6 +823,7 @@ static void symmetrize() {
 // ---------------------------------------------------------------- propagation over one frame of IMU samples
 static double v_fej[3], p_fej[3]; static bool fej_ok = false;
 static double imu_prev[6]; static bool imu_have = false;
+static double ie_a2 = 0, ie_g2 = 0, ie_prev[6]; static long ie_n = 0; static bool ie_have = false, ie_bias_done = false;
 static void propagate(const double* imu, int n) {
     double v_start[3] = {vw[0], vw[1], vw[2]}, p_start[3] = {pw[0], pw[1], pw[2]};
     double Phi[NI * NI]; std::memset(Phi, 0, sizeof Phi);
@@ -807,6 +835,10 @@ static void propagate(const double* imu, int n) {
         double dt = r[0] - t_last;
         if (dt <= 0 || dt > 0.1) { t_last = r[0] > t_last ? r[0] : t_last; continue; }
         t_last = r[0];
+        if (IMU_EST) {
+            if (ie_have) { for (int i = 0; i < 3; i++) { const double da = r[1 + i] - ie_prev[i], dg = r[4 + i] - ie_prev[3 + i]; ie_a2 += da * da; ie_g2 += dg * dg; } ie_n++; }
+            for (int i = 0; i < 6; i++) ie_prev[i] = r[1 + i]; ie_have = true;
+        }
         double x[6] = {r[1], r[2], r[3], r[4], r[5], r[6]};   // input conditioning of the raw sample (IMU_FILT)
         if (IMU_FILT == 1) { for (int i = 0; i < 6; i++) { const double c = x[i]; x[i] = imu_have ? 0.5 * (c + imu_prev[i]) : c; imu_prev[i] = c; } }
         else if (IMU_FILT == 2) { const double al = dt / (IMU_TAU + dt); for (int i = 0; i < 6; i++) { imu_prev[i] = imu_have ? imu_prev[i] + al * (x[i] - imu_prev[i]) : x[i]; x[i] = imu_prev[i]; } }
@@ -864,7 +896,26 @@ static void propagate(const double* imu, int n) {
         }
     }
     const double dts = 0.005;
-    const double qa = SIG_ACC * SIG_ACC * dts, qg = SIG_GYR * SIG_GYR * dts;   // continuous densities
+    double sa2 = SIG_ACC * SIG_ACC, sg2 = SIG_GYR * SIG_GYR;
+    if (IMU_EST) {
+        const double ea = (IMU_EST_N0 * sa2 + ie_a2 / 6) / (IMU_EST_N0 + ie_n), eg = (IMU_EST_N0 * sg2 + ie_g2 / 6) / (IMU_EST_N0 + ie_n);
+        const double hi = IMU_EST_MAX * IMU_EST_MAX;
+        sa2 = ea < 0.25 * sa2 ? 0.25 * sa2 : (ea > hi * sa2 ? hi * sa2 : ea);
+        sg2 = eg < 0.25 * sg2 ? 0.25 * sg2 : (eg > hi * sg2 ? hi * sg2 : eg);
+        if (IMU_EST_TH > 0) {
+            if (ea < IMU_EST_TH * IMU_EST_TH * SIG_ACC * SIG_ACC) sa2 = SIG_ACC * SIG_ACC;
+            if (eg < IMU_EST_TH * IMU_EST_TH * SIG_GYR * SIG_GYR) sg2 = SIG_GYR * SIG_GYR;
+        }
+        if (IMU_EST_BIAS && !ie_bias_done && ie_n >= IMU_EST_BN) {
+            ie_bias_done = true;
+            const double ka2 = sa2 / (SIG_ACC * SIG_ACC), kg2 = sg2 / (SIG_GYR * SIG_GYR);
+            for (int i = 0; i < 3; i++) {
+                if (ka2 > 1.0001) PP(BA + i, BA + i) += (ka2 - 1) * SIG_BA0 * SIG_BA0;
+                if (kg2 > 1.0001) PP(BG + i, BG + i) += (kg2 - 1) * SIG_BG0 * SIG_BG0;
+            }
+        }
+    }
+    const double qa = sa2 * dts, qg = sg2 * dts;   // continuous densities
     for (int i = 0; i < 3; i++) {
         PP(TH + i, TH + i) += qg * T;
         PP(VE + i, VE + i) += qa * T;
@@ -938,6 +989,13 @@ static void inject(const double* dx) {
     }
 }
 
+#ifndef UPD_GATE
+#define UPD_GATE 0.0             // >0: whole vision update gated when chi2 / rows exceeds this
+#endif
+#ifndef UPD_MODE
+#define UPD_MODE 0               // 0: skip the gated update; 1: shrink its step to the gate (covariance update kept)
+#endif
+static double last_chi = 0, upd_dxmax = 0;   // upd_dxmax > 0: reject an update that moves the position more than this (m)
 static bool ekf_update() {
     const int n = n_state, r = nrows;
     if (r > 3) dbg_rows = r;
@@ -999,9 +1057,24 @@ static bool ekf_update() {
         for (int j = 0; j < n; j++) ga[j] *= ilf;
         y[a] = s * il;
     }
+#ifndef __wasm__
+    if (std::getenv("MSCKF_ALLUPD") && r <= 3) { double chi = 0; for (int a = 0; a < r; a++) chi += y[a] * y[a]; std::fprintf(stderr, "UPD f %d r %d col0 %d chi %.2f v %.2f %.2f %.2f\n", frame_no, r, ridx[0][0], chi, vw[0], vw[1], vw[2]); }
+#endif
+    if (r > 3) {   // whole-update chi-square (vision rows only; the priors have at most 3 rows)
+        double chi = 0; for (int a = 0; a < r; a++) chi += y[a] * y[a];
+        last_chi = chi / r;
+#ifndef __wasm__
+        if (std::getenv("MSCKF_CHI")) std::fprintf(stderr, "CHI f %d r %d chi/r %.2f\n", frame_no, r, chi / r);
+#endif
+        if (UPD_GATE > 0 && chi > UPD_GATE * r) {
+            if (UPD_MODE == 0) return false;
+            const double k = std::sqrt(UPD_GATE * r / chi); for (int a = 0; a < r; a++) y[a] *= k;   // shrink the step
+        }
+    }
     double dx[NMAX];
     for (int j = 0; j < n; j++) dx[j] = 0;
     for (int a = 0; a < r; a++) { const double ya = y[a]; const upd_t* ga = HP + a * NMAX; for (int j = 0; j < n; j++) dx[j] += ya * ga[j]; }
+    if (upd_dxmax > 0 && dx[PS] * dx[PS] + dx[PS + 1] * dx[PS + 1] + dx[PS + 2] * dx[PS + 2] > upd_dxmax * upd_dxmax) return false;
     {   // P -= G^T G, 4 rows of G per pass (each P element loaded/stored once per pass)
         int a = 0;
         for (; a + 4 <= r; a += 4) {
@@ -1557,7 +1630,7 @@ VIOBENCH_EXPORT(init) int32_t init(const char* cfg, uint32_t n) {
     for (int i = 0; i < 3; i++) { for (int j = 0; j < 3; j++) Rci.m[3 * i + j] = T[4 * i + j]; tci[i] = T[4 * i + 3]; }
     std::memset(P, 0, sizeof P); std::memset(feats, 0, sizeof feats); std::memset(cool, 0, sizeof cool);
     for (int q = 0; q < (SLAM_N > 0 ? SLAM_N : 1); q++) { lms[q].active = false; lms[q].fidx = -1; }
-    n_state = CB; n_clones = 0; frame_no = 0; started = false; npend = 0; n_splats = 0; last_reset_frame = -100000; mh_C = mh_S = mh_W = 0; mh_ref_ok = mh_basis = false; imu_have = false; v2_avg = 0.25; n_hitf = 0; fej_ok = false; depth_avg = 2.5; dp_v2 = DP_V0 * DP_V0; dp_n = 0; zacc_i = 0; moved = false; move_frames = 0;
+    n_state = CB; n_clones = 0; frame_no = 0; started = false; npend = 0; n_splats = 0; last_reset_frame = -100000; mh_C = mh_S = mh_W = 0; mh_ref_ok = mh_basis = false; imu_have = false; v2_avg = 0.25; n_hitf = 0; fej_ok = false; depth_avg = 2.5; dp_v2 = DP_V0 * DP_V0; dp_n = 0; zacc_i = 0; ie_a2 = ie_g2 = 0; ie_n = 0; ie_have = false; ie_bias_done = false; moved = false; move_frames = 0;
     return VIOBENCH_STATUS_OK;
 }
 
@@ -1707,6 +1780,7 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         started = true;
         add_clone();
         detect();
+        R_vis = Rwi;
         output(out);
         frame_no++;
         return VIOBENCH_STATUS_OK;
@@ -1720,6 +1794,10 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
         const double dw[3] = {pw[0] - p_old[0], pw[1] - p_old[1], pw[2] - p_old[2]}; double di[3]; mtv(Rwi, dw, di); mv(Rci, di, tpred_c);
     }
     if (t_last > t_before) frame_dt = t_last - t_before;
+    if (VIS_EVERY > 1) {
+        if (frame_no % VIS_EVERY != 0) { output(out); frame_no++; return VIOBENCH_STATUS_OK; }
+        Rold = R_vis; R_vis = Rwi; frame_dt *= VIS_EVERY;
+    }
     // gyro rotation between frames, in camera axes: R_cnew_cold = Rci * (Rold^T Rnew)^T * Rci^T
     M3 dR = mmul(mtr(Rold), Rwi);
     M3 Rcc = mmul(mmul(Rci, mtr(dR)), mtr(Rci));
@@ -1796,6 +1874,11 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
             const bool vis = RESET_VIS && visual_velocity(frame_dt, vc);
             if (vis) { double vi[3]; mtv(Rci, vc, vi); mv(Rwi, vi, vw); }
             else for (int i = 0; i < 3; i++) vw[i] = 0;
+            if (vis && RESET_VCAP_K > 0) {   // a visual guess far above the flight's typical speed is implausible: cap it
+                double cap = RESET_VCAP_K * std::sqrt(v2_avg); if (cap < RESET_VCAP_MIN) cap = RESET_VCAP_MIN;
+                const double sv = std::sqrt(vw[0] * vw[0] + vw[1] * vw[1] + vw[2] * vw[2]);
+                if (sv > cap) for (int i = 0; i < 3; i++) vw[i] *= cap / sv;
+            }
             for (int j = 0; j < n_state; j++) for (int i = 0; i < 3; i++) { PP(VE + i, j) = 0; PP(j, VE + i) = 0; }
             for (int i = 0; i < 3; i++) PP(VE + i, VE + i) = vis ? SIG_VVIS * SIG_VVIS : SIG_VRESET * SIG_VRESET;
             while (n_clones > 0) drop_oldest_clone();
@@ -1909,3 +1992,4 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
 }
 
 extern "C" int32_t msckf_frames_since_reset(void) { return frame_no - last_reset_frame; }   // router health signal
+extern "C" int32_t msckf_active_tracks(void) { int n = 0; for (int i = 0; i < MAX_FEATS; i++) n += feats[i].active; return n; }   // router health signal
