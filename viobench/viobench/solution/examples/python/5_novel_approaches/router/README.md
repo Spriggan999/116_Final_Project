@@ -299,12 +299,33 @@ faster flight (see `../data/simulate_hard.py`):
 | **hard level, held-out** | 2.481 | | 1.951 | 1.906 |
 | **extreme level, held-out** | 5.623 | | 1.924 | 1.923 |
 | **windy level, held-out** | 1.539 | | 1.476 | 1.423 |
-| Max fuel, 48 standard episodes | 3.27M | 3.27M | 3.27M | 3.27M |
+| Max fuel, 48 standard episodes | 3.27M | 3.27M | 3.24M | 3.24M |
 
 The adaptation settings were chosen on the dev levels and the selection flights; the held-out levels and the test
 flights were run once per candidate. Estimated claimed area: router_dpn about 3.05%, router_dp2n about 3.08%, against
 2.85% for router_lite2. router_dp2n leans more on learned_lin at medium speeds (slightly worse on the fast levels and
 the agile test sets, better on slow and windy flights).
+
+**Fresh-house check (run once, after all choices were fixed).** 48 new flights in ProcTHOR houses no set or training
+run had used (normal 30-33, agile-hard 40-43, hard level 50-51, noisy level 52-53; 4 flights each), official sandbox:
+
+| Flights | router_lite2 | router_dpn | router_dp2n | dpn - lite2 (se) |
+|---|---:|---:|---:|---:|
+| normal, 16 | 1.202 | 1.084 | 1.140 | -0.118 (0.189), better on 10 |
+| agile-hard, 16 | 2.107 | 1.613 | 1.618 | -0.494 (0.472): one runaway fixed (9.47 -> 1.92 m), 12 identical |
+| hard level, 8 | 1.867 | 1.773 | 1.763 | -0.093 (0.304) |
+| noisy level, 8 | 2.528 | 1.412 | 1.333 | -1.116 (0.898): one failure fixed (8.15 -> 0.91 m) |
+| **all 48** | **1.835** | **1.430** | **1.435** | **-0.406 (0.229)** |
+
+The direction matches the selection and test results; most of the mean gain comes from avoiding a few catastrophic
+flights. One agile flight still fails (about 12 m) in all three models.
+
+**Fuel.** The per-track Jacobian buffer (24 x 72 doubles) used to be cleared in full for every candidate track; only
+the used 2m x 6m block is cleared now. Results are bit-identical (320 flights) and the worst frame drops from 3.27M to
+3.24M. A callgrind profile of the MSCKF step (x86 instructions, as a proxy for fuel): EKF update about 40% (the
+covariance downdate alone about 20%), KLT tracking 20%, detection 12%, template cutting 9%, row building 5%. These
+loops are already vectorized; fusing the single-row downdates of the small updates would cut more, but it changes
+rounding and so is not bit-identical.
 
 Also tried in this round, not adopted:
 
@@ -316,3 +337,4 @@ Also tried in this round, not adopted:
 | Cap the MSCKF weight while it has few tracks (`RT_LOWTR`) | -0.002 to +0.05 m |
 | IMU noise estimate without the threshold | see above |
 | Depth prior also off above 0.6 / 0.8 m/s instantaneous speed (`DP_VMAX`) | did not fix the fast-level regression (the reset cap did) |
+| Pixel noise 0.85 / 0.7 / 0.5 px (vision rows look over-dispersed: chi^2 per row has median 0.08) | +0.09 / +0.18 / +0.31 m: the tracking errors are correlated, so trusting them more hurts |

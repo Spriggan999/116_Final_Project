@@ -1248,7 +1248,7 @@ static int feature_rows(const Feat& f0) {
     }
     const int rr = 2 * m;
     double Hx[2 * (N_CLONES + 1)][6 * (N_CLONES + 1)]; double Hf[2 * (N_CLONES + 1)][3]; double res[2 * (N_CLONES + 1)];
-    std::memset(Hx, 0, sizeof Hx);
+    for (int i = 0; i < rr; i++) std::memset(Hx[i], 0, sizeof(double) * 6 * m);   // only the used 2m x 6m block
     for (int o = 0; o < m; o++) {
         const Clone& C = clones[ck[o]];
         double d[3] = {pf[0] - C.p[0], pf[1] - C.p[1], pf[2] - C.p[2]}, pi[3], pc[3];
