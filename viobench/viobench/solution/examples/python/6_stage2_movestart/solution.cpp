@@ -262,6 +262,7 @@ bool ad_bg_done = false;
 #define NFEAT 9
 double diag9[13] = {0};
 int d10_rows = 0, d10_acc = 0, d10_kept = 0, d10_win = 0;
+double d11_rn[3] = {0, 0, 0};
 int diag9_n = 0;
 #if SPEED_NN
 #include "speednn.h"
@@ -1179,7 +1180,7 @@ void rot_rows(const double A[9], Vec3 eps, double sb) {
         double Rn = SIG_ROTC_K * SIG_ROTC_K * sb * sb * var + SIG_ROTC_MIN * SIG_ROTC_MIN;
         double Hrow[NS] = {0};
         Hrow[ITH + k] = 1.0; Hrow[ITC + k] = -1.0;
-        d10_rows++;
+        d10_rows++; d11_rn[k] = std::sqrt(Rn);
         if (kf_update_row(Hrow, ROT_SIGN * ev[k], Rn)) d10_acc++;
     }
 }
@@ -1743,6 +1744,10 @@ void write_state(double* out) {
     vals[9] = s_log; vals[10] = diag_reason + 10 * (int)(100 * std::sqrt((double)P[IS * NS + IS]));
 #endif
     vals[11] = norm(v_w); vals[12] = phase + 100 * diag_winlen;
+#endif
+#ifdef DIAG11
+    vals[7] = std::sqrt((double)P[(IBG + 0) * NS + IBG + 0]); vals[8] = std::sqrt((double)P[(IBG + 1) * NS + IBG + 1]); vals[9] = std::sqrt((double)P[(IBG + 2) * NS + IBG + 2]);
+    vals[10] = d11_rn[0]; vals[11] = d11_rn[1]; vals[12] = d11_rn[2];
 #endif
 #ifdef DIAG10
     vals[7] = bg.x; vals[8] = bg.y; vals[9] = bg.z; vals[10] = d10_rows + 1e4 * d10_win; vals[11] = d10_acc; vals[12] = d10_kept;

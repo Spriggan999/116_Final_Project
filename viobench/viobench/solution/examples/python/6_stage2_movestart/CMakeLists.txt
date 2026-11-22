@@ -41,4 +41,7 @@ target_compile_definitions(solution PRIVATE
     MS_MIN_SAMPLES=100000
     REST_GYRO_MEAN=0.0
     SPEED_NN=1
-    ADAPT_IMU=2)
+    ADAPT_IMU=2
+    SIG_ROTC_K=1.0
+    ROTC_MIN_KEPT=6
+    SIG_BG0_MOVING=0.06)

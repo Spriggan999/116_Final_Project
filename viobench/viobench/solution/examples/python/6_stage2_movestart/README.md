@@ -9,10 +9,11 @@ Our stage-2 uploads, their source, the flight generators and the evaluation tool
 | `stage2_tracker_v2.wasm` | 4.31 m | 86.5k | persistent two-group tracker, rotation clone, thrust-only IMU model; calibrates during a start hover |
 | `stage2_movestart_nn.wasm` | 3.44 m | 88k | + starts on the first frame with no hover assumption (MOVE_START) + tiny speed-correction MLP (SPEED_NN) |
 | `stage2_adapt.wasm` | 3.45 m | 87.8k | + accelerometer model error scaled by the IMU noise measured online (ADAPT_IMU=2); identical on the server because its IMU noise is normal |
+| `stage2_biasfix.wasm` | not uploaded yet | 89.3k | + gyro bias learned faster: wider bias prior (SIG_BG0_MOVING=0.06) and stronger, more frequent vision rotation rows (SIG_ROTC_K=1, ROTC_MIN_KEPT=6) |
 
 ## Source
 
-- `solution.cpp`, `params.h`: the v8 estimator with every switch in `params.h`. The defaults reproduce v8; `CMakeLists.txt` sets the configuration of `stage2_adapt` (drop `ADAPT_IMU=2` for `stage2_movestart_nn`).
+- `solution.cpp`, `params.h`: the v8 estimator with every switch in `params.h`. The defaults reproduce v8; `CMakeLists.txt` sets the configuration of `stage2_biasfix` (drop the last three definitions for `stage2_adapt`, and also `ADAPT_IMU=2` for `stage2_movestart_nn`).
 - `speednn.h`: the speed model, a 9-8-1 tanh MLP (89 weights) that multiplies the assumed-depth speed measurement by exp(out), clamped to x0.5-x2. Trained on 19.5k windows from 192 flights in ProcTHOR houses 20-43.
 - Build: `viobench bundle viobench/solution/examples/python/6_stage2_movestart -o out.wasm`.
 
@@ -26,7 +27,8 @@ Main switches added in stage 2 (all documented in `params.h`):
 | `MOVE_START=1`, `CALIB_SECONDS=0.0`, `REST_GYRO_MEAN=0.0`, `HOVER_INIT=0` | no start-hover calibration: filter starts on frame 0 with wide priors |
 | `SPEED_NN=1` | speed-correction MLP (`speednn.h`) |
 | `ADAPT_IMU=2` | isotropic accel model error follows the measured accel noise ratio (capped x3) |
-| `WIND_STATE`, `ADAPT_IMU=1`, `ROTC_MIN_KEPT` | tried, no gain (off) |
+| `SIG_BG0_MOVING=0.06`, `SIG_ROTC_K=1.0`, `ROTC_MIN_KEPT=6` | gyro bias learned faster (the server's 1 s rotation error is ~2x ours; a larger gyro bias is the likely cause) |
+| `WIND_STATE`, `ADAPT_IMU=1` | tried, no gain (off) |
 | `DIAG9`, `DIAG10`, `DIAG11` | diagnostics written into the outputs (speed-model features, gyro bias, rotation-row sigmas); never submit |
 
 ## Generating flights (`generation/`, run inside WSL with the OptiX setup from CLAUDE.md)
