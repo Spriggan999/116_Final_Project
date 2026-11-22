@@ -169,6 +169,43 @@ Other ideas from the requested papers:
 - Faint corners when tracks are few (`MS_LOW_N=20 MIN_SCORE_LOW=0.3 PRETEST_LOW=2`): -0.02 (noise); starved frames
   8.8% -> 6.2% only, since the walls have edges rather than corners.
 
+## ROVIO, VI-DSO and DM-VIO ideas (2026-11-21, all rejected)
+
+Base: vins_pipe_edge; selection = 187 flights (dev, normal-dev2, train-*, bias3-xfast/xxfast, hssd3), host replay,
+paired. Base selection mean 0.381 / median 0.283; one start-up blow-up (agile-hard-dev Train-64-0001, 7.4 m) carries
+most mean differences, so medians and the other 171 flights decide. Every flag defaults off, and the four shipped
+builds (vins, vins_lite, vins_edge, vins_pipe_edge) compile to byte-identical wasm.
+
+Diagnosis first (`VINS_TRK=1`: track deaths at exit; `VINS_TRK2`: per-track residual log):
+- Tracks live 0.5-1 s (11-20 frames). Agile flights: ~45% of deaths are LK residual > `MAX_RES`, ~20% outlier kills,
+  ~10% leave the image. Gyro-bias flights: outlier kills dominate (1100-1400 per flight).
+- Surviving tracks keep the same residual at every age (~3.4 grey levels from age 2 to 32): templates do not drift.
+  65% of residual deaths are on the first step after detection (residual ~22). Those features are untrackable even
+  from a good start (below), most likely silhouette corners and aliased one-pixel edges.
+- Error builds up as drift (median 0.08 m at 5 s, 0.14 at 10 s, 0.37 at 60 s), not mostly at start-up.
+
+| Idea (paper) | Flag | Selection mean / median (base 0.381 / 0.283) | Verdict |
+|---|---|---:|---|
+| Motion-aware LK start from neighbours' flow (DSO coarse tracking, ROVIO multilevel) | `NB_FLOW=1` / `2` (+retry) | 0.346 / 0.265, 0.348 / 0.269 | first-step deaths only -15%; gain is the one blow-up flight (other 171: -0.005) |
+| Structure-tensor weighting of corners (ROVIO photometric innovation) | `ST_W=1`, `ST_G0` 8000 / 3000 | 0.351 / 0.292, 0.371 / 0.297 | worse without the blow-up (88/187 better) |
+| Scale as an explicit state (VI-DSO): depth-prior centre = window state s | `SCALE_ST=1`, `S_SIG0`/`S_FLOOR` 0.5/0.1, 1.0/0.3, 0.3/0.05 | 0.420, 0.474, 0.375 / 0.284 | the freer s, the worse; the fixed room-depth prior carries scale the IMU cannot replace |
+| Dynamic photometric weight (DM-VIO) | `VW_DYN` 0.7 / 1.0 / 1.5 | 0.458, 0.397, 0.386 / 0.310 | worse everywhere, most on gyro bias |
+| Patch warping (ROVIO) | - | not built | no template drift to fix (see diagnosis) |
+| Delayed marginalization for IMU init (DM-VIO) | - | not built | start-up is a small share of the error; SCALE_ST showed the IMU scale is weak |
+
+The blow-up flight: velocity is ~3x too small during the first forward acceleration (0.4 vs 1.1 m/s at 3 s) while
+the IMU cost climbs to 30. `DPF_Z0=4` fixes it (1.11 m) and `DPF_Z0=1.5` makes it 10.5 m: the room-depth prior sets
+the scale there. Making that centre a state did not help (it moved the wrong way at the start).
+
+Combined with router_dp's speed gate (`SCALE_ST=1 S_V0 S_V1 S_PIN`): ungated, the free scale state cost slow flights
+(+0.14 m below 0.35 m/s) and helped fast ones (-0.05 to -0.08 m above 0.9 m/s), the same split router_dp found for
+its depth prior. `S_V0=0.4 S_V1=0.5` pins s (sigma `S_PIN` 0.02, solves only) below 0.40 m/s running speed and frees
+it above 0.50: selection -0.014 (median 0.281 vs 0.283), dev levels (sandbox, 64 flights) -0.038 (se 0.024, 36/64;
+extreme -0.062, hard -0.080, windy -0.007, noisy -0.002), worst frame unchanged (2.76M). Scored once on the test
+group: +0.010 (se 0.013, 77/144), so not adopted. Gate 0.45-0.60 and `NB_FLOW` on top were neutral on selection.
+The slow flights' scale bias is small (median x1.04; per-flight spread x1.00-1.12), so a speed-dependent depth centre
+would not help either.
+
 ## Results (unaligned ATE, m)
 
 Selection (171 flights: dev, normal-dev2, train-*, 3x gyro bias, hssd3), host replay:
@@ -236,6 +273,8 @@ python ../msckf/sandbox_eval.py ../wasm/vins.wasm EP.zip ...   # fuel
 Host debug switches (environment): `VINS_DEBUG=N` (state every N frames), `VINS_RESETS`, `VINS_FS` (per-frame window
 events), `VINS_MAPSTATS`, `VINS_GCHECK=frame` (numerical gradient check; `VINS_JAC` for the IMU Jacobian),
 `VINS_SCLOG` (`PIPE_SCHED`: per-frame fixed-work counts and estimated units per chain step, for refitting `CU_*`).
+`VINS_TRK` (track deaths by cause at exit), `VINS_TRK2` (per-track LK residuals), `VINS_ST` (template structure
+tensors), `VINS_SST` (`SCALE_ST` state), `VINS_VW` (RMS reprojection error per solve).
 
 ## Tried and rejected
 
