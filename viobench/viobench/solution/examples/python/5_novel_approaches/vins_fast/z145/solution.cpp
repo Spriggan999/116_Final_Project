@@ -258,6 +258,15 @@
 #define LEARN_P 0                // 1: learned noise weights (lp_weights.h, CMA-ES): 9 log multipliers, each constant + slope x (running
 #endif                           //   speed - 0.5 m/s): pixel noise, depth-prior sigma, depth-prior centre (additive ln), accel noise,
                                  //   gyro noise, velocity prior, zero-velocity sigma, outlier threshold, bias random-walk floor
+#ifndef LP_GATE
+#define LP_GATE 0                // 1 (with LEARN_P): the learned weights apply only as far as the IMU is noisier than nominal:
+#endif                           //   gate = clamp((k - LP_K0) / (LP_K1 - LP_K0), 0, 1), k = measured accel noise / SIG_ACC (router_dpn's test)
+#ifndef LP_K0
+#define LP_K0 1.3
+#endif
+#ifndef LP_K1
+#define LP_K1 1.8
+#endif
 #ifndef NN_DEPTH
 #define NN_DEPTH 0               // learned depth prior (nn_depth_weights.h): each corner's log-depth prior centre is predicted from its
 #endif                           //   elevation below the horizon, image position, patch texture, height, speeds, FOV. 1: linear model, 2: MLP
@@ -3581,6 +3590,15 @@ VIOBENCH_EXPORT(init) int32_t init(const char* cfg, uint32_t n) {
 }
 
 #if LEARN_P
+static double lpg_d2 = 0, lpg_prev[3]; static long lpg_n = 0;   // LP_GATE: sum of squared successive accel differences
+static void lp_gate_imu(const double* imu, int nimu) {
+    for (int i = 0; i < nimu; i++) {
+        const double* a = imu + 7 * i + 1;
+        if (lpg_n > 0 || i > 0) { for (int k = 0; k < 3; k++) { const double d = a[k] - lpg_prev[k]; lpg_d2 += d * d; } lpg_n++; }
+        for (int k = 0; k < 3; k++) lpg_prev[k] = a[k];
+        if (lpg_n == 0 && i == 0) lpg_n = 0;
+    }
+}
 static void lp_update() {   // multipliers for this frame from the running speed
     if (!lp_init) {
         lp_init = true; for (int i = 0; i < 18; i++) lp_w[i] = LP_W[i];
@@ -3589,7 +3607,12 @@ static void lp_update() {   // multipliers for this frame from the running speed
 #endif
     }
     double vr = std::sqrt(v2_avg); if (vr > 2) vr = 2; const double dv = vr - 0.5;
-    for (int i = 0; i < 9; i++) { double l = lp_w[2 * i] + lp_w[2 * i + 1] * dv; if (l < -2) l = -2; if (l > 2) l = 2; lp_m[i] = i == 2 ? l : std::exp(l); }
+    double g = 1;
+    if (LP_GATE) {   // var(successive difference) = 2 sigma^2 per axis; 200-sample prior at the nominal level
+        const double v = (200 * 2 * 3 * SIG_ACC * SIG_ACC + lpg_d2) / (200 + lpg_n), k = std::sqrt(v / (6 * SIG_ACC * SIG_ACC));
+        g = (k - LP_K0) / (LP_K1 - LP_K0); if (g < 0) g = 0; if (g > 1) g = 1;
+    }
+    for (int i = 0; i < 9; i++) { double l = g * (lp_w[2 * i] + lp_w[2 * i + 1] * dv); if (l < -2) l = -2; if (l > 2) l = 2; lp_m[i] = i == 2 ? l : std::exp(l); }
     dpf_lz0 = std::log(DPF_Z0) + lp_m[2];
     sa2 = SIG_ACC * SIG_ACC * lp_m[3] * lp_m[3]; sg2 = SIG_GYR * SIG_GYR * lp_m[4] * lp_m[4];
 }
@@ -3620,6 +3643,7 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     }
 #endif
 #if LEARN_P
+    if (LP_GATE) lp_gate_imu(imu, nimu);
     lp_update();
 #endif
     if (!started) {
