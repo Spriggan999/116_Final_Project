@@ -254,6 +254,25 @@
 #ifndef VARPRO
 #define VARPRO 3                 // Gauss-Newton iterations on each inverse depth (poses fixed) before every joint step
 #endif
+#ifndef LEARN_P
+#define LEARN_P 0                // 1: learned noise weights (lp_weights.h, CMA-ES): 9 log multipliers, each constant + slope x (running
+#endif                           //   speed - 0.5 m/s): pixel noise, depth-prior sigma, depth-prior centre (additive ln), accel noise,
+                                 //   gyro noise, velocity prior, zero-velocity sigma, outlier threshold, bias random-walk floor
+#ifndef NN_DEPTH
+#define NN_DEPTH 0               // learned depth prior (nn_depth_weights.h): each corner's log-depth prior centre is predicted from its
+#endif                           //   elevation below the horizon, image position, patch texture, height, speeds, FOV. 1: linear model, 2: MLP
+#ifndef NN_OFF
+#define NN_OFF 0.2               // added to the predicted ln depth (targets are well-triangulated features, nearer than average)
+#endif
+#ifndef NN_SIG
+#define NN_SIG 1.0               // prior sigma (ln depth) of features with a learned centre
+#endif
+#ifndef NN_HET
+#define NN_HET 0                 // 1 (NN_DEPTH 2): sigma = NN_SIG x predicted sigma / 0.39 (the median prediction)
+#endif
+#ifndef NN_EDGE
+#define NN_EDGE 0                // 1: edgelets use the learned centre too (trained on corners only)
+#endif
 #ifndef DPF_SIG
 #define DPF_SIG 1.0              // >0: log-depth prior on every feature, ln(depth / DPF_Z0) ~ N(0, DPF_SIG^2) (indoor rooms)
 #endif
@@ -880,6 +899,27 @@ static bool marg_now = false;   // this frame marginalized the oldest frame
 static int frame_no = 0; static double t_last = 0, frame_dt = 0.05; static bool started = false;
 static double w_last[3];
 static double sa2 = SIG_ACC * SIG_ACC, sg2 = SIG_GYR * SIG_GYR;
+#if LEARN_P
+#include "lp_weights.h"   // LP_W[18]: (constant, slope) per multiplier
+static double lp_w[18], lp_m[9] = {1, 1, 0, 1, 1, 1, 1, 1, 1}; static bool lp_init = false;
+#define SIGPX_ (SIG_PX * lp_m[0])
+#define DPFSIG_ (DPF_SIG * lp_m[1])
+#define ZVSIG_ (ZV_SIG * lp_m[6])
+#define OUTPX_ (OUT_PX * lp_m[7])
+#define VPK_ (VP_K * lp_m[5])
+#define VPMIN_ (VP_MIN * lp_m[5])
+#define BFG_ (BIAS_FLOOR_G * lp_m[8])
+#define BFA_ (BIAS_FLOOR_A * lp_m[8])
+#else
+#define SIGPX_ SIG_PX
+#define DPFSIG_ DPF_SIG
+#define ZVSIG_ ZV_SIG
+#define OUTPX_ OUT_PX
+#define VPK_ VP_K
+#define VPMIN_ VP_MIN
+#define BFG_ BIAS_FLOOR_G
+#define BFA_ BIAS_FLOOR_A
+#endif
 static double imu_prev[6]; static bool imu_prev_ok = false;
 static double dpf_lz0 = 0.0;   // ln of the depth prior's centre (DPF_Z0, or adapted: DPF_ADAPT)
 static double ie_a2 = 0, ie_g2 = 0, ie_prev[6]; static long ie_n = 0; static bool ie_have = false, ie_bias_done = false;
@@ -895,6 +935,17 @@ struct WF {   // window feature
     bool edge; float enu[WIN + 1], env[WIN + 1];   // edgelet: unit normal (pixels) of each observation
 #endif
     double lam; bool lam_ok;
+#if NN_DEPTH
+    double dmu, dsig;   // learned depth prior: ln-depth centre (anchor camera) and sigma
+#define DPF_LZ(F) ((F).dmu)
+#define DPF_S(F) ((F).dsig)
+#else
+#define DPF_LZ(F) dpf_lz0
+#define DPF_S(F) DPFSIG_
+#endif
+#ifndef __wasm__
+    long uid;   // VINS_DLOG: feature id in the depth-prior training log
+#endif
 };
 static WF wf[MAX_WF];
 struct Feat {
@@ -1275,10 +1326,97 @@ static bool obs_gate_ok(const WF& F, const Feat& f);
 #else
 #define EDGE_SHIFT(F, i) do {} while (0)
 #endif
+#ifndef __wasm__
+static FILE* dlog = nullptr; static bool dlog_init = false; static long dlog_uid = 0;
+static void dlog_feature(WF& F, const Feat& f) {   // VINS_DLOG=path: inputs of a new window feature (depth-prior training data)
+    if (!dlog_init) { dlog_init = true; const char* p = std::getenv("VINS_DLOG"); if (p) dlog = std::fopen(p, "w"); }
+    F.uid = dlog_uid++;
+    if (!dlog || nfr < 1) return;
+    const Frame& N = fr[nfr - 1];
+    const double bc[3] = {(f.x - cx) / fx, (f.y - cy) / fy, 1}; double bi[3], bw[3]; mtv(Rci, bc, bi); mv(N.R, bi, bw);
+    const double ng = std::sqrt(gw[0] * gw[0] + gw[1] * gw[1] + gw[2] * gw[2]), nb = std::sqrt(bw[0] * bw[0] + bw[1] * bw[1] + bw[2] * bw[2]);
+    const double se = (bw[0] * gw[0] + bw[1] * gw[1] + bw[2] * gw[2]) / (ng * nb);
+    const double zc[3] = {0, 0, 1}; double zi[3], zw[3]; mtv(Rci, zc, zi); mv(N.R, zi, zw);
+    const double sp = (zw[0] * gw[0] + zw[1] * gw[1] + zw[2] * gw[2]) / ng;
+    const int S = 2 * PR + 1; double a = 0, b = 0, d = 0, m = 0, m2 = 0;
+    for (int k = 0; k < S * S; k++) { a += f.gxf[k] * f.gxf[k]; b += f.gxf[k] * f.gyf[k]; d += f.gyf[k] * f.gyf[k]; m += f.tf[k]; m2 += f.tf[k] * f.tf[k]; }
+    m /= S * S; m2 = m2 / (S * S) - m * m; const double tr = 0.5 * (a + d), dd = std::sqrt(0.25 * (a - d) * (a - d) + b * b);
+    int nact = 0; for (int i = 0; i < FEAT_N; i++) nact += feats[i].active;
+    const double vn = std::sqrt(N.v[0] * N.v[0] + N.v[1] * N.v[1] + N.v[2] * N.v[2]);
+    int edge = 0;
+#if EDGE
+    edge = f.edge;
+#endif
+    std::fprintf(dlog, "F %ld %d %.5f %.5f %.5f %.5f %.4f %.4f %.4f %.3f %.3f %.3f %.3f %d %d %.4f %.4f %.4f\n", F.uid, frame_no, se, sp, bc[0], bc[1],
+                 N.p[2], std::sqrt(v2_avg), vn, std::log1p(std::max(0.0, tr - dd)), std::log1p(tr + dd), m, std::sqrt(std::max(0.0, m2)), edge, nact, fx / W, f.x, f.y);
+}
+static void dlog_obs(const WF& F, const Feat& f) {
+    if (dlog) std::fprintf(dlog, "O %ld %d %.6f %.6f\n", F.uid, frame_no, (f.x - cx) / fx, (f.y - cy) / fy);
+}
+#endif
+#if NN_DEPTH
+#ifndef NN_WSET
+#define NN_WSET 0                // weights: 0 nn_depth_weights.h (chosen), 1/2: the same training with other seeds (robustness check)
+#endif
+#if NN_WSET == 1
+#include "nn_depth_weights_s1.h"
+#elif NN_WSET == 2
+#include "nn_depth_weights_s2.h"
+#elif NN_WSET == 3
+#include "nn_depth_weights_g.h"   // geometry + appearance only (no speed, no height)
+#else
+#include "nn_depth_weights.h"
+#endif
+static void nn_depth_set(WF& F, const Feat& f) {
+    F.dmu = dpf_lz0; F.dsig = DPF_SIG;
+#if EDGE
+    if (f.edge && !NN_EDGE) return;
+#endif
+    if (nfr < 1) return;
+    const Frame& N = fr[nfr - 1];
+    const double bc[3] = {(f.x - cx) / fx, (f.y - cy) / fy, 1}; double bi[3], bw[3]; mtv(Rci, bc, bi); mv(N.R, bi, bw);
+    const double ng = std::sqrt(gw[0] * gw[0] + gw[1] * gw[1] + gw[2] * gw[2]), nb = std::sqrt(bw[0] * bw[0] + bw[1] * bw[1] + bw[2] * bw[2]);
+    const double se = (bw[0] * gw[0] + bw[1] * gw[1] + bw[2] * gw[2]) / (ng * nb);
+    const double zc[3] = {0, 0, 1}; double zi[3], zw[3]; mtv(Rci, zc, zi); mv(N.R, zi, zw);
+    const double sp = (zw[0] * gw[0] + zw[1] * gw[1] + zw[2] * gw[2]) / ng;
+    const int S = 2 * PR + 1; double a = 0, b = 0, d = 0, m = 0, m2 = 0;
+    for (int k = 0; k < S * S; k++) { a += f.gxf[k] * f.gxf[k]; b += f.gxf[k] * f.gyf[k]; d += f.gyf[k] * f.gyf[k]; m += f.tf[k]; m2 += f.tf[k] * f.tf[k]; }
+    m /= S * S; m2 = m2 / (S * S) - m * m; const double tr = 0.5 * (a + d), dd = std::sqrt(0.25 * (a - d) * (a - d) + b * b);
+    const double vn = std::sqrt(N.v[0] * N.v[0] + N.v[1] * N.v[1] + N.v[2] * N.v[2]);
+    const double pz = N.p[2] < -2 ? -2 : (N.p[2] > 2 ? 2 : N.p[2]);
+#if NN_NIN == 11
+    (void)vn; (void)pz;
+    const double x[NN_NIN] = {se, se * se, sp, bc[0], bc[1], std::fabs(bc[0]),
+                              std::log1p(tr - dd > 0 ? tr - dd : 0) / 5, std::log1p(tr + dd) / 7, m / 255, std::sqrt(m2 > 0 ? m2 : 0) / 40, 3.0 * fx / W};
+#else
+    const double x[NN_NIN] = {se, se * se, sp, bc[0], bc[1], std::fabs(bc[0]), pz, std::sqrt(v2_avg), vn > 3 ? 3 : vn,
+                              std::log1p(tr - dd > 0 ? tr - dd : 0) / 5, std::log1p(tr + dd) / 7, m / 255, std::sqrt(m2 > 0 ? m2 : 0) / 40, 3.0 * fx / W};
+#endif
+    float xn[NN_NIN]; for (int i = 0; i < NN_NIN; i++) xn[i] = (float)((x[i] - NN_MU[i]) / NN_SD[i]);
+    double mu, ls = std::log(0.39);
+    if (NN_DEPTH == 1) { mu = NN_WL[NN_NIN]; for (int i = 0; i < NN_NIN; i++) mu += NN_WL[i] * xn[i]; }
+    else {
+        mu = NN_B2[0]; ls = NN_B2[1];
+        for (int h = 0; h < NN_H; h++) {
+            float t = NN_B1[h]; for (int i = 0; i < NN_NIN; i++) t += xn[i] * NN_W1[i * NN_H + h];
+            const double th = std::tanh((double)t); mu += th * NN_W2[2 * h]; ls += th * NN_W2[2 * h + 1];
+        }
+    }
+    mu += NN_OFF; if (mu < -0.7) mu = -0.7; if (mu > 2.1) mu = 2.1;
+    F.dmu = mu;
+    if (NN_HET) { if (ls < -3) ls = -3; if (ls > 1) ls = 1; F.dsig = NN_SIG * std::exp(ls) / 0.39; } else F.dsig = NN_SIG;
+}
+#endif
 static int wf_alloc(int live) {
     for (int w = 0; w < MAX_WF; w++) if (!wf[w].used) { WF& F = wf[w]; F.used = true; F.live = live; F.nobs = 0; F.lam_ok = false; F.lam = 0;
 #if EDGE
         F.edge = live >= 0 && feats[live].edge;
+#endif
+#ifndef __wasm__
+        if (live >= 0) dlog_feature(F, feats[live]);
+#endif
+#if NN_DEPTH
+        if (live >= 0) nn_depth_set(F, feats[live]); else { F.dmu = dpf_lz0; F.dsig = DPF_SIG; }
 #endif
         return w; }
     return -1;
@@ -1286,6 +1424,9 @@ static int wf_alloc(int live) {
 static void wf_add_obs(int w, const Feat& f) {
     WF& F = wf[w]; if (F.nobs >= WIN + 1) return;
     F.ser[F.nobs] = frame_no; F.u[F.nobs] = (float)((f.x - cx) / fx); F.v[F.nobs] = (float)((f.y - cy) / fy); F.q[F.nobs] = f.lkr;
+#ifndef __wasm__
+    dlog_obs(F, f);
+#endif
 #if EDGE
     F.enu[F.nobs] = f.enx; F.env[F.nobs] = f.eny;
 #endif
@@ -1827,7 +1968,7 @@ static void add_unary() {
         const Frame& F = fr[k];
         double info = 0;
         if (VPRIOR_SIG > 0) info += (F.span / VP_DT) / (F.vsig * F.vsig);
-        if (F.zv) info += 1.0 / (ZV_SIG * ZV_SIG);
+        if (F.zv) info += 1.0 / (ZVSIG_ * ZVSIG_);
         if (info <= 0) continue;
         const int o = FB(k) + 6;
         for (int i = 0; i < 3; i++) { if (want_H) HH(o + i, o + i) += info; gs[o + i] += info * F.v[i]; }
@@ -1901,7 +2042,7 @@ static bool refine_lam(WF& F, int iters) {
 #if EDGE
             if (F.edge) { const double nu = F.enu[o], nv = F.env[o]; e0 = nu * e0 + nv * e1; e1 = 0; j0 = nu * j0 + nv * j1; j1 = 0; }
 #endif
-            const double en = std::sqrt(e0 * e0 + e1 * e1), wh = en / SIG_PX <= HUBER ? 1.0 : HUBER * SIG_PX / en;
+            const double en = std::sqrt(e0 * e0 + e1 * e1), wh = en / SIGPX_ <= HUBER ? 1.0 : HUBER * SIGPX_ / en;
             h2 += wh * (j0 * j0 + j1 * j1); g += wh * (j0 * e0 + j1 * e1);
         }
 #else
@@ -1920,11 +2061,11 @@ static bool refine_lam(WF& F, int iters) {
 #if EDGE
             if (F.edge) { const double nu = F.enu[o], nv = F.env[o]; e0 = nu * e0 + nv * e1; e1 = 0; j0 = nu * j0 + nv * j1; j1 = 0; }
 #endif
-            const double en = std::sqrt(e0 * e0 + e1 * e1), wh = en / SIG_PX <= HUBER ? 1.0 : HUBER * SIG_PX / en;
+            const double en = std::sqrt(e0 * e0 + e1 * e1), wh = en / SIGPX_ <= HUBER ? 1.0 : HUBER * SIGPX_ / en;
             h2 += wh * (j0 * j0 + j1 * j1); g += wh * (j0 * e0 + j1 * e1);
         }
 #endif
-        if (DPF_SIG > 0) { const double r = (std::log(F.lam) + dpf_lz0) / DPF_SIG, J = 1.0 / (F.lam * DPF_SIG); h2 += J * J; g += J * r; }
+        if (DPF_SIG > 0) { const double r = (std::log(F.lam) + DPF_LZ(F)) / DPF_S(F), J = 1.0 / (F.lam * DPF_S(F)); h2 += J * J; g += J * r; }
         if (!(h2 > 1e-12)) return true;
         double nl = F.lam - g / h2;
         if (nl < 0.5 * F.lam) nl = 0.5 * F.lam; if (nl > 2 * F.lam) nl = 2 * F.lam;
@@ -1970,8 +2111,8 @@ static bool add_feature(int w) {
 #endif
         const double en = std::sqrt(e[0] * e[0] + e[1] * e[1]);
         err += en;
-        cost_f += 0.5 * (e[0] * e[0] + e[1] * e[1]) / (SIG_PX * SIG_PX);
-        const double sq = LK_R0 > 0 ? SIG_PX * std::sqrt(1.0 + (F.q[q0] / LK_R0) * (F.q[q0] / LK_R0)) : SIG_PX;   // weaker for a poor LK fit
+        cost_f += 0.5 * (e[0] * e[0] + e[1] * e[1]) / (SIGPX_ * SIGPX_);
+        const double sq = LK_R0 > 0 ? SIGPX_ * std::sqrt(1.0 + (F.q[q0] / LK_R0) * (F.q[q0] / LK_R0)) : SIGPX_;   // weaker for a poor LK fit
         const double wh = en / sq <= HUBER ? 1.0 : HUBER * sq / en;
         const double info = wh / (sq * sq);
 #if !EDGE
@@ -2026,7 +2167,7 @@ static bool add_feature(int w) {
     }
     fb_err[w] = err / (m - 1);
     if (DPF_SIG > 0) {   // log-depth prior
-        const double r = (std::log(lam) + dpf_lz0) / DPF_SIG, J = 1.0 / (lam * DPF_SIG);
+        const double r = (std::log(lam) + DPF_LZ(F)) / DPF_S(F), J = 1.0 / (lam * DPF_S(F));
         hff += J * J; gf += J * r; cost_f += 0.5 * r * r;
     }
     fb_cost += cost_f;
@@ -2342,7 +2483,7 @@ static double total_cost() {
     for (int i = 0; i < n; i++) { double s = 0; for (int j = 0; j < n; j++) s += (j <= i ? Hp[i * NX + j] : Hp[j * NX + i]) * d[j]; c += 0.5 * d[i] * s + gp[i] * d[i]; }
     for (int i = 0; i < n; i++) { for (int j = 0; j < n; j++) Hs[i * NX + j] = 0; gs[i] = 0; }
     imu_cost = 0; for (int k = 1; k < nfr; k++) add_imu(k); c += 0.5 * imu_cost;
-    for (int k = 0; k < nfr; k++) { const Frame& F = fr[k]; double info = (F.span / VP_DT) / (F.vsig * F.vsig) + (F.zv ? 1.0 / (ZV_SIG * ZV_SIG) : 0);
+    for (int k = 0; k < nfr; k++) { const Frame& F = fr[k]; double info = (F.span / VP_DT) / (F.vsig * F.vsig) + (F.zv ? 1.0 / (ZVSIG_ * ZVSIG_) : 0);
         c += 0.5 * info * (F.v[0] * F.v[0] + F.v[1] * F.v[1] + F.v[2] * F.v[2]); }
     fb_cost = 0; for (int w = 0; w < MAX_WF; w++) if (wf_usable(wf[w]) && !dbg_nofeat) add_feature(w); c += fb_cost;
     if (dbg_noimu) c = fb_cost;
@@ -2400,7 +2541,7 @@ static bool gn_iteration(bool last, bool chord) {
     const int n = NSYS();
     want_H = !chord; build(); want_H = true;
     int nfeat = 0; for (int w = 0; w < MAX_WF; w++) nfeat += fb_on[w];
-    const double out_px = (OUT_LOW_N > 0 && nfeat < OUT_LOW_N) ? OUT_PX_LOW : OUT_PX;   // few features: keep more of them
+    const double out_px = (OUT_LOW_N > 0 && nfeat < OUT_LOW_N) ? OUT_PX_LOW : OUTPX_;   // few features: keep more of them
     for (int i = 0; i < n; i++) { if (!chord) HH(i, i) += LM_REL * HH(i, i) + 1e-9; dxs[i] = -gs[i]; }
 #if PROF_CHOL2
     { static double Hc[NX * NX]; std::memcpy(Hc, Hs, sizeof(double) * NX * n); chol(Hc, n, NX); }
@@ -2528,6 +2669,9 @@ static void reanchor(WF& F, int o1) {
     const int k = fidx(F.ser[o1]); if (k < 0) { F.lam_ok = false; return; }
     M3 Rw; double pc[3]; cam_pose(k, Rw, pc);
     double d[3] = {pwv[0] - pc[0], pwv[1] - pc[1], pwv[2] - pc[2]}, q[3]; mtv(Rw, d, q);
+#if NN_DEPTH
+    if (q[2] > MIN_DEPTH && q[2] < MAX_DEPTH) F.dmu += std::log(q[2] * F.lam);   // the prior follows the point to the new anchor
+#endif
     if (q[2] > MIN_DEPTH && q[2] < MAX_DEPTH) F.lam = 1.0 / q[2]; else F.lam_ok = false;
 }
 static void remove_obs(int serial) {
@@ -2597,7 +2741,7 @@ static void marg_fin() {   // after frame 0 is eliminated from Hs: it becomes th
     const int s0 = fr[0].serial;
     { double* t = Hp; Hp = Hs; Hs = t; } for (int i = 0; i < n; i++) gp[i] = gs[i];
     if (SHARED_BIAS) for (int i = 2; i < 8; i++) {   // bias information floor (random walk): scale its row and column
-        const double cap = 1.0 / (i < 5 ? BIAS_FLOOR_G * BIAS_FLOOR_G : BIAS_FLOOR_A * BIAS_FLOOR_A), h = Hp[i * NX + i];
+        const double cap = 1.0 / (i < 5 ? BFG_ * BFG_ : BFA_ * BFA_), h = Hp[i * NX + i];
         if (h > cap) { const double f = std::sqrt(cap / h); for (int j = 0; j <= i; j++) Hp[i * NX + j] *= f; for (int j = i; j < n; j++) Hp[j * NX + i] *= f; gp[i] *= f; }
     }
     // features: marginalized ones leave the window (their information is in the prior), others lose their frame-0 observation
@@ -2748,7 +2892,7 @@ static bool gn_middle() {   // PIPE 3: middle part of the Cholesky
 static bool gn_finish() {   // rest of the Cholesky, step, inverse depths, outliers
     const int n = pipe_n;
     int nfeat = 0; for (int w = 0; w < MAX_WF; w++) nfeat += fb_on[w];
-    const double out_px = (OUT_LOW_N > 0 && nfeat < OUT_LOW_N) ? OUT_PX_LOW : OUT_PX;
+    const double out_px = (OUT_LOW_N > 0 && nfeat < OUT_LOW_N) ? OUT_PX_LOW : OUTPX_;
     if (!chol4r<NX>(Hs, n, pipe_js, n)) { st_fail++; return false; }
     if (MAH) mah_store(n);
     chol_solve(Hs, n, NX, dxs);
@@ -2969,8 +3113,35 @@ static void sky_solve(double* x) {   // x <- H^-1 x through the permuted profile
 }
 #endif
 static void sc_unit();
+#ifndef PIPE_FXP
+#define PIPE_FXP 0               // 1: the planner's fixed work of later frames is at least CU_MID / CU_PHL + CU_TRACK x live tracks
+#endif
+#ifndef PIPE_LX
+#define PIPE_LX 0                // 1: a 2-frame cycle whose last frame is predicted (learned linear model) above PIPE_CAPX gets 3 frames
+#endif
+#ifndef PIPE_CAPX
+#define PIPE_CAPX 1.50           // M fuel
+#endif
+#ifndef PIPE_LA_MID
+#define PIPE_LA_MID 0            // 1: the look-ahead only on middle frames (not on a cycle's first frame)
+#endif
+#ifndef PIPE_LA
+#define PIPE_LA -1               // >= 0: on frames before the cycle's last, a large indivisible unit (build, solve, marginalization build /
+#endif                           //   prep, drop) is not started when it would end more than PIPE_LA above the frame's target
+static double sc_next_cost() {   // estimated cost of the next unit when it is a large indivisible one (else 0)
+    const int n = NSYS();
+    switch (sc_st) {
+    case SC_BASE: return CU_N2 * n * n;
+    case SC_SOLVE: return CU_SOLVE * sc_n * sc_n + CU_SOLC;
+    case SC_MBUILD: return CU_N2 * n * n + CU_IMU;
+    case SC_MPREP: return cu_mprep(n);
+    case SC_DROP0: return cu_mprep(n) + CU_DRC / 2;
+    default: return 0;
+    }
+}
 static void sc_work(double target) {   // run units until the estimated work reaches target (or the chain ends)
     while (sc_st != SC_DONE && sc_done < target) {
+        if (PIPE_LA >= 0 && target < 1e299 && (!PIPE_LA_MID || pipe_ph > 0) && sc_done + sc_next_cost() > target + PIPE_LA) break;
         const int st0 = sc_st; const double d0 = sc_done;
         sc_unit();
         sc_log[st0] += sc_done - d0;
@@ -3044,7 +3215,7 @@ static void sc_unit() {
             if (ok) {
                 const int n = sc_n;
                 int nfeat = 0; for (int w = 0; w < MAX_WF; w++) nfeat += fb_on[w];
-                const double out_px = (OUT_LOW_N > 0 && nfeat < OUT_LOW_N) ? OUT_PX_LOW : OUT_PX;
+                const double out_px = (OUT_LOW_N > 0 && nfeat < OUT_LOW_N) ? OUT_PX_LOW : OUTPX_;
                 if (MAH) mah_store(n);
 #if SKYLINE
                 sky_solve(dxs);
@@ -3172,7 +3343,7 @@ static void step_sched(const double* imu, int32_t nimu, double* out) {
         F.mh_on = false;
 #endif
         {   double sig = VPRIOR_SIG;
-            if (VP_ADAPT) { sig = VP_K * std::sqrt(v2_avg); if (sig < VP_MIN) sig = VP_MIN; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
+            if (VP_ADAPT) { sig = VPK_ * std::sqrt(v2_avg); if (sig < VPMIN_) sig = VPMIN_; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
             F.vsig = sig; }
         fr[nfr] = F; pre[nfr] = pp; nfr++; pp_on = false;
         for (int i = 0; i < FEAT_N; i++) {
@@ -3192,7 +3363,7 @@ static void step_sched(const double* imu, int32_t nimu, double* out) {
         for (int w = 0; w < MAX_WF; w++) {
             WF& Fw = wf[w]; if (!Fw.used || Fw.lam_ok || Fw.nobs < 2) continue;
             st_tri++;
-            if (!triangulate(Fw) && DPF_SIG > 0 && DPF_INIT && Fw.nobs >= DPF_MINOBS) { Fw.lam = std::exp(-dpf_lz0); Fw.lam_ok = true; }
+            if (!triangulate(Fw) && DPF_SIG > 0 && DPF_INIT && Fw.nobs >= DPF_MINOBS) { Fw.lam = std::exp(-DPF_LZ(Fw)); Fw.lam_ok = true; }
         }
         pipe_kf = nfr < 3 || second_newest_is_kf();
         map_search();
@@ -3212,12 +3383,31 @@ static void step_sched(const double* imu, int32_t nimu, double* out) {
                           + CU_CELL * (st_cells - c0) + CU_CFULL * (st_cfull - cf0) + CU_SEARCH * (st_map_try - m0) + CU_DET * (st_det - d0);
         if (pipe_ph == 0) {   // cycle length and per-frame level (fixed work of later frames as in the previous cycle)
             int len = PIPE;
+            if (PIPE_FXP) {   // later frames' fixed work: at least what the current track count implies (start-up: tracks grow)
+                const double m1 = CU_MID + CU_TRACK * na, m2 = CU_PHL + CU_TRACK * na;
+                if (sc_fixed_prev[1] < m1) sc_fixed_prev[1] = m1; if (sc_fixed_prev[2] < m2) sc_fixed_prev[2] = m2;
+            }
             for (;;) {
                 sc_level = (sc_total + fx_k + (len - 2) * sc_fixed_prev[1] + sc_fixed_prev[2] + PIPE_RES) / len;
                 if (sc_level <= PIPE_CAP || len >= PIPE_MAX) break;
                 len++;
             }
+#if PIPE_LX
+            if (len == 2 && PIPE_MAX >= 3) {   // learned overshoot of the 2-frame cycle's last frame (linear model fitted on sandbox fuel)
+                static const double LXW[13] = {0.0158163, -0.137342, 0.0536243, -0.884504, 0.229686, 0.0122956, -0.00430943, -0.00185604, -0.00931902, 0.0402415, 0.232175, -0.0270902, 0.174593};
+                int nwf = 0, nob = 0; for (int w = 0; w < MAX_WF; w++) if (wf[w].used) { nwf++; nob += wf[w].nobs; }
+                const double f[13] = {1, sc_total / 1e6, fx_k / 1e6, sc_fixed_prev[2] / 1e6, na / 32.0, (st_cells - c0) / 30.0, (st_cfull - cf0) / 10.0,
+                                      (double)(st_map_try - m0), (st_det - d0) / 10.0, (double)sc_marg, nfr / 11.0, nwf / 50.0, nob / 300.0};
+                double ex = 0; for (int i = 0; i < 13; i++) ex += LXW[i] * f[i];
+                if (sc_level / 1e6 + ex > PIPE_CAPX) { len = 3; sc_level = (sc_total + fx_k + sc_fixed_prev[1] + sc_fixed_prev[2] + PIPE_RES) / 3; }
+            }
+#endif
             sc_len = len; sc_target = 0;
+#ifndef __wasm__
+            if (std::getenv("VINS_PLOG")) { int nwf = 0, nob = 0; for (int w = 0; w < MAX_WF; w++) if (wf[w].used) { nwf++; nob += wf[w].nobs; }
+                std::fprintf(stderr, "PL %d %d %.0f %.0f %.0f %.0f %.0f %d %ld %ld %ld %ld %d %d %d %d\n", frame_no, len, sc_total, fx_k, sc_fixed_prev[1], sc_fixed_prev[2], sc_level,
+                             na, st_cells - c0, st_cfull - cf0, st_map_try - m0, st_det - d0, (int)sc_marg, nfr, nwf, nob); }
+#endif
         }
         const int role = pipe_ph == 0 ? 0 : (pipe_ph == sc_len - 1 ? 2 : 1);
         sc_fixed_prev[role] = fx_k;
@@ -3285,7 +3475,7 @@ static void step_pipe(const double* imu, int32_t nimu, double* out) {
         F.mh_on = false;
 #endif
         {   double sig = VPRIOR_SIG;
-            if (VP_ADAPT) { sig = VP_K * std::sqrt(v2_avg); if (sig < VP_MIN) sig = VP_MIN; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
+            if (VP_ADAPT) { sig = VPK_ * std::sqrt(v2_avg); if (sig < VPMIN_) sig = VPMIN_; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
             F.vsig = sig; }
         track(Rcc);
         fr[nfr] = F; pre[nfr] = pp; nfr++; pp_on = false;
@@ -3306,7 +3496,7 @@ static void step_pipe(const double* imu, int32_t nimu, double* out) {
         for (int w = 0; w < MAX_WF; w++) {
             WF& Fw = wf[w]; if (!Fw.used || Fw.lam_ok || Fw.nobs < 2) continue;
             st_tri++;
-            if (!triangulate(Fw) && DPF_SIG > 0 && DPF_INIT && Fw.nobs >= DPF_MINOBS) { Fw.lam = std::exp(-dpf_lz0); Fw.lam_ok = true; }
+            if (!triangulate(Fw) && DPF_SIG > 0 && DPF_INIT && Fw.nobs >= DPF_MINOBS) { Fw.lam = std::exp(-DPF_LZ(Fw)); Fw.lam_ok = true; }
         }
         pipe_kf = nfr < 3 || second_newest_is_kf();
         if (PIPE_SEARCH_ALL || !(MAP_SKIP_MARG && pipe_kf && nfr == WIN)) map_search();
@@ -3390,8 +3580,48 @@ VIOBENCH_EXPORT(init) int32_t init(const char* cfg, uint32_t n) {
     return VIOBENCH_STATUS_OK;
 }
 
+#if LEARN_P
+static void lp_update() {   // multipliers for this frame from the running speed
+    if (!lp_init) {
+        lp_init = true; for (int i = 0; i < 18; i++) lp_w[i] = LP_W[i];
+#ifndef __wasm__
+        if (const char* e = std::getenv("VINS_LP")) { for (int i = 0; i < 18 && *e; i++) { char* q; lp_w[i] = std::strtod(e, &q); e = *q ? q + 1 : q; } }
+#endif
+    }
+    double vr = std::sqrt(v2_avg); if (vr > 2) vr = 2; const double dv = vr - 0.5;
+    for (int i = 0; i < 9; i++) { double l = lp_w[2 * i] + lp_w[2 * i + 1] * dv; if (l < -2) l = -2; if (l > 2) l = 2; lp_m[i] = i == 2 ? l : std::exp(l); }
+    dpf_lz0 = std::log(DPF_Z0) + lp_m[2];
+    sa2 = SIG_ACC * SIG_ACC * lp_m[3] * lp_m[3]; sg2 = SIG_GYR * SIG_GYR * lp_m[4] * lp_m[4];
+}
+#endif
+#ifndef __wasm__
+static double aug_imu[7 * 64]; static double aug_ba[3], aug_bg[3]; static double aug_k[2] = {0, 0}; static uint64_t aug_s = 0; static bool aug_init = false;
+static double aug_gauss() {   // xorshift64* + Box-Muller (host augmentation only)
+    auto u = [&]() { aug_s ^= aug_s >> 12; aug_s ^= aug_s << 25; aug_s ^= aug_s >> 27; return ((aug_s * 2685821657736338717ULL) >> 11) * (1.0 / 9007199254740992.0) + 1e-12; };
+    const double a = u(), b = u(); return std::sqrt(-2 * std::log(a)) * std::cos(6.283185307179586 * b);
+}
+#endif
 VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double* imu, int32_t nimu, double* out) {
     img = frame;
+#ifndef __wasm__
+    if (!aug_init) {   // VINS_AUG="k_noise,k_bias,seed": IMU white noise and bias turn-on scaled to k x the nominal (training only)
+        aug_init = true;
+        if (const char* e = std::getenv("VINS_AUG")) { double a = 1, b = 1, sd = 1; std::sscanf(e, "%lf,%lf,%lf", &a, &b, &sd);
+            aug_k[0] = std::sqrt(std::max(0.0, a * a - 1)); aug_k[1] = std::sqrt(std::max(0.0, b * b - 1)); aug_s = 88172645463325252ULL ^ (uint64_t)(sd * 7919);
+            for (int i = 0; i < 3; i++) { aug_ba[i] = 0.2 * aug_k[1] * aug_gauss(); aug_bg[i] = 0.02 * aug_k[1] * aug_gauss(); } }
+    }
+    if ((aug_k[0] > 0 || aug_k[1] > 0) && nimu <= 64) {
+        for (int i = 0; i < 7 * nimu; i++) aug_imu[i] = imu[i];
+        for (int i = 0; i < nimu; i++) for (int a = 0; a < 3; a++) {
+            aug_imu[7 * i + 1 + a] += aug_ba[a] + 0.28 * aug_k[0] * aug_gauss();
+            aug_imu[7 * i + 4 + a] += aug_bg[a] + 0.07 * aug_k[0] * aug_gauss();
+        }
+        imu = aug_imu;
+    }
+#endif
+#if LEARN_P
+    lp_update();
+#endif
     if (!started) {
         double a[3] = {0, 0, 0}; int k = 0;
         for (int i = 0; i < nimu; i++) { a[0] += imu[7 * i + 1]; a[1] += imu[7 * i + 2]; a[2] += imu[7 * i + 3]; k++; }
@@ -3473,7 +3703,7 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
 #endif
 
     {   double sig = VPRIOR_SIG;
-        if (VP_ADAPT) { sig = VP_K * std::sqrt(v2_avg); if (sig < VP_MIN) sig = VP_MIN; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
+        if (VP_ADAPT) { sig = VPK_ * std::sqrt(v2_avg); if (sig < VPMIN_) sig = VPMIN_; if (sig > VPRIOR_SIG) sig = VPRIOR_SIG; }
         F.vsig = sig; }
     // track with the gyro rotation
     const M3 Rcc = mmul(mmul(Rci, mtr(P.dR)), mtr(Rci));
@@ -3501,7 +3731,7 @@ VIOBENCH_EXPORT(step) int32_t step(double t, const uint8_t* frame, const double*
     for (int w = 0; w < MAX_WF; w++) {
         WF& Fw = wf[w]; if (!Fw.used || Fw.lam_ok || Fw.nobs < 2) continue;
         st_tri++;
-        if (!triangulate(Fw) && DPF_SIG > 0 && DPF_INIT && Fw.nobs >= DPF_MINOBS) { Fw.lam = std::exp(-dpf_lz0); Fw.lam_ok = true; }
+        if (!triangulate(Fw) && DPF_SIG > 0 && DPF_INIT && Fw.nobs >= DPF_MINOBS) { Fw.lam = std::exp(-DPF_LZ(Fw)); Fw.lam_ok = true; }
     }
     // keyframe decision before the solve (it compares the two previous frames): a frame that will marginalize skips the map search
     const bool kf_pre = KF_PRE ? (nfr < 3 || second_newest_is_kf()) : false;
